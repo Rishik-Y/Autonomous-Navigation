@@ -1,0 +1,309 @@
+<?xml version="1.0" ?>
+<robot name="road_layout">
+  <link name="road_straight_1">
+    <visual>
+      <geometry>
+        <box size="20.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="20.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="road_straight_2">
+    <visual>
+      <geometry>
+        <box size="20.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="20.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_straight_1_to_road_straight_2" type="fixed">
+    <parent link="road_straight_1"/>
+    <child link="road_straight_2"/>
+    <origin xyz="30.000 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="road_circle_seg_1">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_straight_1_to_road_circle_seg_1" type="fixed">
+    <parent link="road_straight_1"/>
+    <child link="road_circle_seg_1"/>
+    <origin xyz="1.045 9.945 0.000" rpy="0 0 1.466"/>
+  </joint>
+  <link name="road_circle_seg_2">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_1_to_road_circle_seg_2" type="fixed">
+    <parent link="road_circle_seg_1"/>
+    <child link="road_circle_seg_2"/>
+    <origin xyz="3.090 9.511 0.000" rpy="0 0 1.257"/>
+  </joint>
+  <link name="road_circle_seg_3">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_2_to_road_circle_seg_3" type="fixed">
+    <parent link="road_circle_seg_2"/>
+    <child link="road_circle_seg_3"/>
+    <origin xyz="5.000 8.660 0.000" rpy="0 0 1.047"/>
+  </joint>
+  <link name="road_circle_seg_4">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_3_to_road_circle_seg_4" type="fixed">
+    <parent link="road_circle_seg_3"/>
+    <child link="road_circle_seg_4"/>
+    <origin xyz="6.691 7.431 0.000" rpy="0 0 0.838"/>
+  </joint>
+  <link name="road_circle_seg_5">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_4_to_road_circle_seg_5" type="fixed">
+    <parent link="road_circle_seg_4"/>
+    <child link="road_circle_seg_5"/>
+    <origin xyz="8.090 5.878 0.000" rpy="0 0 0.628"/>
+  </joint>
+  <link name="road_circle_seg_6">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_5_to_road_circle_seg_6" type="fixed">
+    <parent link="road_circle_seg_5"/>
+    <child link="road_circle_seg_6"/>
+    <origin xyz="9.135 4.067 0.000" rpy="0 0 0.419"/>
+  </joint>
+  <link name="road_circle_seg_7">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_6_to_road_circle_seg_7" type="fixed">
+    <parent link="road_circle_seg_6"/>
+    <child link="road_circle_seg_7"/>
+    <origin xyz="9.781 2.079 0.000" rpy="0 0 0.209"/>
+  </joint>
+  <link name="road_circle_seg_8">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_7_to_road_circle_seg_8" type="fixed">
+    <parent link="road_circle_seg_7"/>
+    <child link="road_circle_seg_8"/>
+    <origin xyz="10.000 0.000 0.000" rpy="0 0 0.000"/>
+  </joint>
+  <link name="road_circle_seg_9">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_8_to_road_circle_seg_9" type="fixed">
+    <parent link="road_circle_seg_8"/>
+    <child link="road_circle_seg_9"/>
+    <origin xyz="9.781 -2.079 0.000" rpy="0 0 -0.209"/>
+  </joint>
+  <link name="road_circle_seg_10">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_9_to_road_circle_seg_10" type="fixed">
+    <parent link="road_circle_seg_9"/>
+    <child link="road_circle_seg_10"/>
+    <origin xyz="9.135 -4.067 0.000" rpy="0 0 -0.419"/>
+  </joint>
+  <link name="road_circle_seg_11">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_10_to_road_circle_seg_11" type="fixed">
+    <parent link="road_circle_seg_10"/>
+    <child link="road_circle_seg_11"/>
+    <origin xyz="8.090 -5.878 0.000" rpy="0 0 -0.628"/>
+  </joint>
+  <link name="road_circle_seg_12">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_11_to_road_circle_seg_12" type="fixed">
+    <parent link="road_circle_seg_11"/>
+    <child link="road_circle_seg_12"/>
+    <origin xyz="6.691 -7.431 0.000" rpy="0 0 -0.838"/>
+  </joint>
+  <link name="road_circle_seg_13">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_12_to_road_circle_seg_13" type="fixed">
+    <parent link="road_circle_seg_12"/>
+    <child link="road_circle_seg_13"/>
+    <origin xyz="5.000 -8.660 0.000" rpy="0 0 -1.047"/>
+  </joint>
+  <link name="road_circle_seg_14">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_13_to_road_circle_seg_14" type="fixed">
+    <parent link="road_circle_seg_13"/>
+    <child link="road_circle_seg_14"/>
+    <origin xyz="3.090 -9.511 0.000" rpy="0 0 -1.257"/>
+  </joint>
+  <link name="road_circle_seg_15">
+    <visual>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="2.0 4.0 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_road_circle_seg_14_to_road_circle_seg_15" type="fixed">
+    <parent link="road_circle_seg_14"/>
+    <child link="road_circle_seg_15"/>
+    <origin xyz="1.045 -9.945 0.000" rpy="0 0 -1.466"/>
+  </joint>
+  <joint name="joint_road_circle_seg_15_to_road_straight_2" type="fixed">
+    <parent link="road_circle_seg_15"/>
+    <child link="road_straight_2"/>
+    <origin xyz="40.000 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>

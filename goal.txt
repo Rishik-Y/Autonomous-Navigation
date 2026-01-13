@@ -1,5 +1,0 @@
-For More Complex Roads: To handle intersections,
- you would need a more advanced approach. This would involve "skeletonizing" the road image (thinning it to a 1-pixel wide line)
- and then properly detecting junctions to build a graph, 
- which brings you back full circle to something like networkx, but generated from an image!
- Libraries like OpenCV or scikit-image are perfect for these tasks.

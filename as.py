@@ -1,3 +1,4 @@
+
 import pygame
 import cv2
 import cv2.ximgproc as ximgproc
@@ -119,7 +120,7 @@ class Path:
         idx_hint = self.get_segment_index(s_hint)
         
         # 2. Define a search window (e.g., 20 segments back, 20 segments forward)
-        #    This prevents the projection from snapping to the wrong side of the loop.
+        #    This prevents the projection from snapping to the wrong side of the loop.
         search_window = 20
         idx_start = max(0, idx_hint - search_window)
         idx_end = min(len(self.wp) - 1, idx_hint + search_window)
@@ -291,13 +292,17 @@ class Car:
         return np.array([self.x_m + np.random.normal(0, SENSOR_NOISE_STD_DEV),
                          self.y_m + np.random.normal(0, SENSOR_NOISE_STD_DEV)])
 
+# In class Car:
     def draw(self, screen, g_to_s):
         """Draws the car. g_to_s is the meter-to-screen conversion function."""
         car_center_screen = g_to_s((self.x_m, self.y_m))
         
-        # Calculate pixel dimensions for drawing
-        length_px = CAR_LENGTH_M * METERS_TO_PIXELS * (g_to_s.scale / METERS_TO_PIXELS)
-        width_px = CAR_WIDTH_M * METERS_TO_PIXELS * (g_to_s.scale / METERS_TO_PIXELS)
+        # --- FIX ---
+        # The car's size in pixels is its meter size * the base conversion * the current zoom level.
+        # The (g_to_s.scale) contains the current zoom level.
+        length_px = CAR_LENGTH_M * METERS_TO_PIXELS * g_to_s.scale
+        width_px = CAR_WIDTH_M * METERS_TO_PIXELS * g_to_s.scale
+        # --- END FIX ---
 
         if length_px < 1 or width_px < 1: return # Don't draw if too small
         
@@ -340,9 +345,10 @@ def extract_waypoints_from_mask(road_mask, step_size):
     return waypoints
 
 def chaikin_smoother(points, iterations):
+    if not points:
+        return []
     for _ in range(iterations):
         new_points = []
-        if not points: return []
         new_points.append(points[0])
         for i in range(len(points) - 1):
             p1, p2 = points[i], points[i + 1]
@@ -579,3 +585,4 @@ if __name__ == '__main__':
         run_simulation(final_waypoints_px)
     else:
         print("Failed to generate or load a valid path. Exiting.")
+

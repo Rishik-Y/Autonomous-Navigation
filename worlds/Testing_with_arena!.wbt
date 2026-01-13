@@ -1,0 +1,49 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/vehicles/protos/generic/Truck.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.12438172764221034 -0.1049444481705465 0.9866690674318916 4.530085635217329
+  position 3.6255589447004226 27.907311872647625 9.7319952348412
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  translation 0 0 0.9
+  floorSize 20 18
+}
+Truck {
+  hidden position_0_0 2.6247110983364447e-12
+  hidden position2_0_0 1.844512225422087e-05
+  hidden position_0_1 3.31051214030767e-10
+  hidden position2_0_1 1.844514573695974e-05
+  hidden position_0_2 -1.1186334232238649e-06
+  hidden position_0_3 -1.118610025940825e-06
+  hidden position_0_4 0.03993194351359859
+  hidden rotation_1 -1.312355549168209e-12 -0.9999999999999898 -1.4229838447730424e-07 1.8445133800476548e-05
+  hidden rotation_2 1.655256069887234e-10 0.9999999998389368 -1.7947877381348743e-05 1.8445133800476548e-05
+  hidden rotation_3 0 1 0 1.1186793076469722e-06
+  hidden rotation_4 0 -1 0 1.1186793076469722e-06
+  hidden rotation_7 0 0 1 0.03993194351360325
+  hidden position_7_0 -0.04043884292658522
+  hidden position_7_1 -0.040438822295643106
+  hidden position_7_2 -0.046443545654841115
+  hidden position_7_3 -0.04644352502394522
+  hidden position_7_4 -0.05245250042151899
+  hidden position_7_5 -0.05245247979119849
+  hidden rotation_9 0 1 0 0.04043884292657982
+  hidden rotation_10 0 -1 0 0.04043882229564647
+  hidden rotation_11 0 1 0 0.04644354565483886
+  hidden rotation_12 0 -1 0 0.04644352502394336
+  hidden rotation_13 0 1 0 0.05245250042151841
+  hidden rotation_14 0 -1 0 0.05245247979120265
+  translation 0.05678705614000812 4.64419834335151e-09 0.6131061281995265
+  rotation -2.29114798008138e-07 0.9999999999999738 1.1763025747138958e-08 0.1143844545456001
+}

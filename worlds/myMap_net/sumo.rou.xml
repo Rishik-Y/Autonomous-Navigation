@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes>
+    <vType id="passenger_car" accel="2.6" decel="4.5" length="5" maxSpeed="40" color="1,0,0" />
+
+    <route id="long_journey_route" edges="1416039828 119753637_4 119753637_5 119753633_1 119753633_2 119753633_4 119753633_5 119753633_6 119753633_7 119753633_3 1416039837 119753637_5 E0 1416039827" />
+
+    <vehicle id="my_car" type="passenger_car" route="long_journey_route" depart="0" />
+
+</routes>

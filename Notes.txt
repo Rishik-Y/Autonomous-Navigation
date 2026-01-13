@@ -1,0 +1,3 @@
+Supposed to be doing in 3d using pybullet but gave up.
+This are some urdf files and code with pybullet
+

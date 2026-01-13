@@ -1,2 +1,0 @@
-Here the plane maker makes an urdf file with curved road for gazebo ig.
-idk which sim i was thinking to use back then

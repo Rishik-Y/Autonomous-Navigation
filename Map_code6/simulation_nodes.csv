@@ -1,9 +1,0 @@
-source,source_capacity
-load_zone_1,5000
-load_zone_2,3000
-load_zone_3,8000
-load_zone_4,2000
-load_zone_5,6000
-dump_zone_1,0
-dump_zone_2,0
-dump_zone_3,0

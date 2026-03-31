@@ -78,7 +78,13 @@ def load_config():
     if os.path.exists(config_path):
         try:
             with open(config_path, 'r') as f:
-                config = json.load(f)
+                loaded = json.load(f)
+            if "global_planner" in loaded or "local_planner" in loaded:
+                print("Note: Planner settings now live in algorithm_config.json and will be ignored here.")
+            config = {
+                "truck_count": loaded.get("truck_count", DEFAULT_TRUCK_COUNT),
+                "coal_capacities": loaded.get("coal_capacities", {})
+            }
             print(f"Loaded config: {config['truck_count']} trucks, {len(config['coal_capacities'])} mines configured.")
         except Exception as e:
             print(f"Error loading config: {e}")

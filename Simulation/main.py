@@ -9,29 +9,39 @@ import json
 # --- Module Imports ---
 import map_loader as map_data
 from config import *
-from utils import Path, KalmanFilter, a_star_pathfinding
+from utils import Path, KalmanFilter
 from car import Car
 from dispatcher import Dispatcher
 from graphics import grid_to_screen, screen_to_grid, draw_road_network, draw_active_path
 from tooltip_overlay import get_hovered_entity, draw_tooltip
+from planner_registry import load_local_planner
+
+
+def _load_json_file(config_file, label):
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading {label}: {e}")
+    return None
 
 def load_mine_config():
     """Load configuration from mine_config.json, fallback to defaults."""
     config = {
         "truck_count": 5,
-        "coal_capacities": {}
+        "coal_capacities": {},
     }
     
     config_file = "mine_config.json"
-    if os.path.exists(config_file):
-        try:
-            with open(config_file, 'r') as f:
-                loaded = json.load(f)
-                config["truck_count"] = loaded.get("truck_count", 5)
-                config["coal_capacities"] = loaded.get("coal_capacities", {})
-                print(f"Loaded mine config: {config['truck_count']} trucks, {len(config['coal_capacities'])} mines configured.")
-        except Exception as e:
-            print(f"Error loading mine config: {e}, using defaults.")
+    loaded = _load_json_file(config_file, "mine config")
+    if loaded is not None:
+        config["truck_count"] = loaded.get("truck_count", 5)
+        config["coal_capacities"] = loaded.get("coal_capacities", {})
+        print(
+            f"Loaded mine config: {config['truck_count']} trucks, "
+            f"{len(config['coal_capacities'])} mines configured."
+        )
     else:
         # Fallback to truck.txt for backwards compatibility
         if os.path.exists("truck.txt"):
@@ -40,8 +50,47 @@ def load_mine_config():
                     config["truck_count"] = int(f.read().strip())
             except ValueError:
                 pass
-        print(f"No mine_config.json found, using defaults with {config['truck_count']} trucks.")
+        print(
+            f"No mine_config.json found, using defaults with {config['truck_count']} trucks."
+        )
     
+    return config
+
+
+def load_algorithm_config():
+    """Load planner selection from algorithm_config.json, with legacy fallback."""
+    config = {
+        "global_planner": DEFAULT_GLOBAL_PLANNER,
+        "local_planner": DEFAULT_LOCAL_PLANNER,
+    }
+    config_file = "algorithm_config.json"
+    loaded = _load_json_file(config_file, "algorithm config")
+    if loaded is not None:
+        config["global_planner"] = loaded.get("global_planner", DEFAULT_GLOBAL_PLANNER)
+        config["local_planner"] = loaded.get("local_planner", DEFAULT_LOCAL_PLANNER)
+        print(
+            f"Loaded algorithm config: global='{config['global_planner']}', "
+            f"local='{config['local_planner']}'."
+        )
+        return config
+
+    legacy = _load_json_file("mine_config.json", "mine config")
+    if legacy:
+        legacy_global = legacy.get("global_planner")
+        legacy_local = legacy.get("local_planner")
+        if legacy_global or legacy_local:
+            config["global_planner"] = legacy.get("global_planner", DEFAULT_GLOBAL_PLANNER)
+            config["local_planner"] = legacy.get("local_planner", DEFAULT_LOCAL_PLANNER)
+            print(
+                "DEPRECATION WARNING: No algorithm_config.json found; using planner entries from "
+                "mine_config.json. Move them to algorithm_config.json to keep files separated."
+            )
+            return config
+
+    print(
+        f"No algorithm_config.json found, using defaults "
+        f"global='{config['global_planner']}', local='{config['local_planner']}'."
+    )
     return config
 
 def get_path_from_nodes(route_node_names, waypoints_map):
@@ -90,8 +139,24 @@ def run_simulation():
 
     # --- Load Mine Configuration ---
     mine_config = load_mine_config()
+    algorithm_config = load_algorithm_config()
     truck_count = mine_config["truck_count"]
     coal_capacities = mine_config["coal_capacities"]
+    global_planner_name = algorithm_config["global_planner"]
+    local_planner_name = algorithm_config["local_planner"]
+    try:
+        local_planner = load_local_planner(local_planner_name)
+    except Exception as e:
+        print(
+            f"Local planner '{local_planner_name}' failed to init ({type(e).__name__}: {e}). "
+            "Falling back to default."
+        )
+        try:
+            local_planner = load_local_planner(DEFAULT_LOCAL_PLANNER)
+        except Exception as fallback_error:
+            raise RuntimeError(
+                f"Default local planner '{DEFAULT_LOCAL_PLANNER}' failed to init ({fallback_error})."
+            ) from fallback_error
     print(f"Starting simulation with {truck_count} trucks.")
 
     # --- Load Pre-computed Data ---
@@ -165,7 +230,11 @@ def run_simulation():
         trace_back_and_patch(zone, set())
 
     # --- Initialize Components ---
-    dispatcher = Dispatcher(road_graph, coal_capacities=coal_capacities)
+    dispatcher = Dispatcher(
+        road_graph,
+        coal_capacities=coal_capacities,
+        global_planner_name=global_planner_name,
+    )
     cars = []
     kfs = []
 
@@ -196,7 +265,12 @@ def run_simulation():
         target_node = dispatcher.assign_task(car)
         car.target_node_name = target_node
         
-        route = a_star_pathfinding(road_graph, car.current_node_name, target_node, cache=route_cache)
+        route = local_planner.compute_route(
+            road_graph,
+            car.current_node_name,
+            target_node,
+            cache=route_cache,
+        )
         if not route: continue
         
         wp = get_path_from_nodes(route, waypoints_map)
@@ -342,7 +416,12 @@ def run_simulation():
                     print(f"Car {car.id}: Routing {car.current_node_name} -> {new_target}")
                     
                     # USE DISPATCHER'S WEIGHTED GRAPH AND ROUTE CACHE
-                    route_node_names = a_star_pathfinding(dispatcher.get_graph(), car.current_node_name, new_target, cache=route_cache)
+                    route_node_names = local_planner.compute_route(
+                        dispatcher.get_graph(),
+                        car.current_node_name,
+                        new_target,
+                        cache=route_cache,
+                    )
                     
                     if route_node_names:
                         waypoints_m = get_path_from_nodes(route_node_names, waypoints_map)

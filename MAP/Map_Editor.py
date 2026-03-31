@@ -5,8 +5,16 @@ import math
 import os
 import re
 from ast import literal_eval
+from typing import NamedTuple, Tuple
+import importlib
+import map_data
+import generate_map_cache
 import map_storage
 import map_ui
+
+class SaveResult(NamedTuple):
+    success: bool
+    status_text: str
 
 # --- EDITOR SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -110,6 +118,32 @@ def save_map_data():
     except Exception as e:
         print(f"Error saving map data: {e}")
         return False
+
+def regenerate_map_cache():
+    """Reload map data and regenerate map_cache.pkl. Returns True on success."""
+    print("Regenerating map cache...")
+    try:
+        importlib.reload(map_data)
+        generate_map_cache.main()
+        return True
+    except Exception as e:
+        print(f"Error regenerating map cache: {e}")
+        return False
+
+def handle_save_request() -> SaveResult:
+    """Attempt to save map data and return a SaveResult with status text."""
+    if save_map_data():
+        return SaveResult(True, "SAVED to Saved_Map/map_data.py")
+    return SaveResult(False, "ERROR saving map data")
+
+def apply_save_result(save_result: SaveResult, current_is_dirty: bool, current_cache_needs_regen: bool) -> Tuple[bool, bool]:
+    """Return (is_dirty, cache_needs_regen) after applying save_result.
+
+    Saves clear the dirty flag and mark cache regeneration as needed; failures preserve existing state.
+    """
+    updated_is_dirty = False if save_result.success else current_is_dirty
+    updated_cache_needs_regen = current_cache_needs_regen or save_result.success
+    return updated_is_dirty, updated_cache_needs_regen
 
 # --- Drawing & Coordinate Functions ---
 PRE_CALCULATED_SPLINES = []
@@ -327,6 +361,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
     brush_color = PURPLE
     status_text = "Mode: ADD PURPLE"
     is_dirty = False
+    cache_needs_regen = False
     selection_start_node = None
     is_drawing_manual = False
     manual_path_px = []
@@ -357,9 +392,12 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     if is_dirty:
                         choice = map_ui.confirm_save_dialog(screen, font, mode_label)
                         if choice == "save":
-                            if save_map_data():
-                                is_dirty = False
-                                status_text = "SAVED to Saved_Map/map_data.py"
+                            save_result = handle_save_request()
+                            is_dirty, cache_needs_regen = apply_save_result(save_result, is_dirty, cache_needs_regen)
+                            status_text = save_result.status_text
+                            if not save_result.success:
+                                status_text = "Save failed - mode switch canceled."
+                                continue
                         elif choice == "cancel":
                             continue
                         elif choice == "quit":
@@ -370,11 +408,9 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     switch_requested = "prev" if is_reverse else "next"
                     continue
                 if event.key == pygame.K_s:
-                    if save_map_data():
-                        is_dirty = False
-                        status_text = "SAVED to Saved_Map/map_data.py"
-                    else:
-                        status_text = "ERROR saving map data"
+                    save_result = handle_save_request()
+                    is_dirty, cache_needs_regen = apply_save_result(save_result, is_dirty, cache_needs_regen)
+                    status_text = save_result.status_text
                 elif event.key == pygame.K_g:
                     mode, brush_color, status_text = 'add_green', GREEN, "Mode: ADD GREEN (Load Zone)"
                     selection_start_node = None
@@ -685,6 +721,8 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
         pygame.display.flip()
 
     pygame.quit()
+    if cache_needs_regen:
+        regenerate_map_cache()
     return switch_requested
 
 if __name__ == '__main__':

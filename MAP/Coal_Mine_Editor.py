@@ -24,7 +24,7 @@ PIXELS_TO_METERS = 1.0 / METERS_TO_PIXELS
 CLICK_THRESHOLD_PX = 20
 
 MAP_DATA_FILE = map_storage.legacy_path('map_data.py')
-CONFIG_FILE = 'mine_config.json'
+CONFIG_FILENAME = 'mine_config.json'
 DEFAULT_COAL_CAPACITY = 100
 DEFAULT_TRUCK_COUNT = 5
 
@@ -69,10 +69,10 @@ def load_config():
     """Load configuration from mine_config.json"""
     global config
     config_path = map_storage.resolve_input_path(
-        CONFIG_FILE,
+        CONFIG_FILENAME,
         [
-            map_storage.legacy_path(CONFIG_FILE),
-            map_storage.simulation_path(CONFIG_FILE)
+            map_storage.legacy_path(CONFIG_FILENAME),
+            map_storage.simulation_path(CONFIG_FILENAME)
         ]
     )
     if os.path.exists(config_path):
@@ -120,11 +120,11 @@ def save_config():
     try:
         content = json.dumps(config, indent=4, sort_keys=True)
         map_storage.write_text_file(
-            CONFIG_FILE,
+            CONFIG_FILENAME,
             content,
             copy_targets=[
-                map_storage.legacy_path(CONFIG_FILE),
-                map_storage.simulation_path(CONFIG_FILE)
+                map_storage.legacy_path(CONFIG_FILENAME),
+                map_storage.simulation_path(CONFIG_FILENAME)
             ]
         )
         print("Config saved to Saved_Map/mine_config.json")
@@ -451,7 +451,8 @@ def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False):
         # --- HUD ---
         tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            f"{mode_label}{tab_hint} | CONTROLS: [S]ave | [T]ruck count | [+/-] Adjust trucks | [R]eload map | PAN/ZOOM: Right-Click+Drag / Mouse Wheel | CLICK on mine to edit",
+            f"{mode_label}{tab_hint} | CONTROLS: [S]ave | [T]ruck count | [+/-] Adjust trucks | [R]eload map",
+            "PAN/ZOOM: Right-Click+Drag / Mouse Wheel | CLICK on mine to edit",
             f"Trucks: {config['truck_count']} | Total Mines: {len(LOAD_ZONES)}",
             status_text
         ]

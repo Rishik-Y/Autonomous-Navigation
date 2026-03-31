@@ -24,8 +24,8 @@ def _load_planner_class(module_name, base_class):
         ]
         if len(candidates) != 1:
             raise ImportError(
-                f"Planner module '{module_name}' must define Planner or exactly one {base_class.__name__} subclass "
-                f"(found {len(candidates)})."
+                f"Planner module '{module_name}' must define Planner or exactly one {base_class.__name__} subclass, "
+                f"found {len(candidates)}."
             )
         planner_class = candidates[0]
 

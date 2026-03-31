@@ -225,6 +225,10 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=
                 pan[1] += dy
                 last_mouse_pos = event.pos
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                    switch_requested = None
+                    continue
                 if allow_tab_switch and event.key == pygame.K_TAB:
                     is_reverse = event.mod & pygame.KMOD_SHIFT
                     running = False

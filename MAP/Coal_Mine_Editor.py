@@ -351,6 +351,10 @@ def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index
                 running = False
             
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                    switch_requested = None
+                    continue
                 if allow_tab_switch and event.key == pygame.K_TAB:
                     is_reverse = event.mod & pygame.KMOD_SHIFT
                     if is_dirty:

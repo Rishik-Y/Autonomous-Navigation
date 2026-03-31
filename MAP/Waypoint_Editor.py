@@ -144,6 +144,10 @@ def run_waypoint_editor(mode_label="Waypoint Editor", allow_tab_switch=False, mo
             if event.type == pygame.QUIT: running = False
             
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                    switch_requested = None
+                    continue
                 if allow_tab_switch and event.key == pygame.K_TAB:
                     is_reverse = event.mod & pygame.KMOD_SHIFT
                     if is_dirty:

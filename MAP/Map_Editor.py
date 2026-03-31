@@ -311,7 +311,7 @@ def fix_intersections():
     return len(intersections_found)
 
     # --- Main Editor Loop ---
-def run_editor(mode_label="Map Editor", allow_tab_switch=False):
+def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None, total_modes=None):
     global NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
@@ -341,7 +341,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False):
     mouse_dragging, last_mouse_pos = False, None
 
     running = True
-    switch_requested = False
+    switch_requested = None
     while running:
         dt = clock.tick(60) / 1000.0
         mouse_pos = pygame.mouse.get_pos()
@@ -353,6 +353,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False):
             # --- Keyboard Input for Mode Change ---
             elif event.type == pygame.KEYDOWN:
                 if allow_tab_switch and event.key == pygame.K_TAB:
+                    is_reverse = event.mod & pygame.KMOD_SHIFT
                     if is_dirty:
                         choice = map_ui.confirm_save_dialog(screen, font, mode_label)
                         if choice == "save":
@@ -363,10 +364,10 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False):
                             continue
                         elif choice == "quit":
                             running = False
-                            switch_requested = False
+                            switch_requested = None
                             continue
                     running = False
-                    switch_requested = True
+                    switch_requested = "prev" if is_reverse else "next"
                     continue
                 if event.key == pygame.K_s:
                     if save_map_data():
@@ -679,13 +680,12 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False):
         for i, text in enumerate(hud_texts):
             text_surface = font.render(text, True, BLACK)
             screen.blit(text_surface, (10, 10 + i * 20))
+        map_ui.draw_mode_overlay(screen, font, mode_label, mode_index, total_modes, is_dirty)
 
         pygame.display.flip()
 
     pygame.quit()
-    if switch_requested:
-        return "next"
-    return None
+    return switch_requested
 
 if __name__ == '__main__':
     run_editor()

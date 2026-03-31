@@ -46,3 +46,34 @@ def confirm_save_dialog(screen, font, mode_label: str, timeout_seconds: int = 12
 
         pygame.display.flip()
         clock.tick(30)
+
+
+def draw_mode_overlay(screen, font, mode_label: str, mode_index=None, total_modes=None, is_dirty=False):
+    if mode_index is None or total_modes is None:
+        return
+
+    line1 = f"[{mode_index}/{total_modes}]: {mode_label}"
+    lines = [line1]
+    if is_dirty:
+        lines.append("● Unsaved changes")
+
+    rendered = [font.render(text, True, (0, 0, 0)) for text in lines]
+    padding = 8
+    spacing = 4
+    width = max(surface.get_width() for surface in rendered)
+    height = sum(surface.get_height() for surface in rendered) + spacing * (len(rendered) - 1)
+
+    rect_width = width + padding * 2
+    rect_height = height + padding * 2
+    x = screen.get_width() - rect_width - 10
+    y = 10
+
+    background = pygame.Surface((rect_width, rect_height), pygame.SRCALPHA)
+    background.fill((255, 255, 255, 220))
+    screen.blit(background, (x, y))
+    pygame.draw.rect(screen, (0, 0, 0), (x, y, rect_width, rect_height), 2)
+
+    y_offset = y + padding
+    for surface in rendered:
+        screen.blit(surface, (x + padding, y_offset))
+        y_offset += surface.get_height() + spacing

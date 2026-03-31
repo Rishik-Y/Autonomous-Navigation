@@ -19,12 +19,20 @@ def run_launcher():
     while True:
         mode_label, runner = MODES[mode_index]
         try:
-            result = runner(mode_label=mode_label, allow_tab_switch=True)
+            result = runner(
+                mode_label=mode_label,
+                allow_tab_switch=True,
+                mode_index=mode_index + 1,
+                total_modes=len(MODES)
+            )
         except Exception as exc:
             print(f"Launcher exiting due to error in {mode_label}: {exc}")
             raise
         if result == "next":
             mode_index = (mode_index + 1) % len(MODES)
+            continue
+        if result == "prev":
+            mode_index = (mode_index - 1) % len(MODES)
             continue
         break
 

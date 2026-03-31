@@ -7,6 +7,7 @@ import pickle # Added for loading waypoints.pkl
 import os     # Added for checking file existence
 import map_data
 import map_storage
+import map_ui
 
 # --- VISUAL & GAME SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -140,7 +141,7 @@ def draw_node_path(screen, node_path_names, g_to_s, scale):
     pygame.draw.lines(screen, NODE_PATH_COLOR, False, path_px, max(2, int(scale * 3)))
 
 
-def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False):
+def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=None, total_modes=None):
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
     pygame.display.set_caption(mode_label)
@@ -201,7 +202,7 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False):
 
     # --- Main Loop ---
     running = True
-    switch_requested = False
+    switch_requested = None
     while running:
         dt = clock.tick(60) / 1000.0
         if dt == 0: continue
@@ -225,8 +226,9 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False):
                 last_mouse_pos = event.pos
             elif event.type == pygame.KEYDOWN:
                 if allow_tab_switch and event.key == pygame.K_TAB:
+                    is_reverse = event.mod & pygame.KMOD_SHIFT
                     running = False
-                    switch_requested = True
+                    switch_requested = "prev" if is_reverse else "next"
                     continue
 
         # --- Drawing ---
@@ -253,13 +255,12 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False):
         for i, text in enumerate(hud_texts):
             text_surface = font.render(text, True, (0,0,0))
             screen.blit(text_surface, (10, 10 + i * 20))
+        map_ui.draw_mode_overlay(screen, font, mode_label, mode_index, total_modes, False)
 
         pygame.display.flip()
 
     pygame.quit()
-    if switch_requested:
-        return "next"
-    return None
+    return switch_requested
 
 if __name__ == '__main__':
     run_viewer()

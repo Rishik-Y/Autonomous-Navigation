@@ -135,9 +135,9 @@ def handle_save_request(is_dirty: bool) -> SaveResult:
         return SaveResult(True, False, "SAVED to Saved_Map/map_data.py")
     return SaveResult(False, is_dirty, "ERROR saving map data")
 
-def apply_save_result(save_result: SaveResult, cache_needs_regen: bool):
-    cache_needs_regen = cache_needs_regen or save_result.success
-    return save_result.is_dirty, save_result.status_text, cache_needs_regen
+def apply_save_result(save_result: SaveResult, current_cache_needs_regen: bool):
+    updated_cache_needs_regen = current_cache_needs_regen or save_result.success
+    return save_result.is_dirty, save_result.status_text, updated_cache_needs_regen
 
 # --- Drawing & Coordinate Functions ---
 PRE_CALCULATED_SPLINES = []

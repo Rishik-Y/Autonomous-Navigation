@@ -29,12 +29,12 @@ LOAD_ZONES = []
 DUMP_ZONES = []
 FUEL_ZONES = []
 VISUAL_ROAD_CHAINS = []
-MAP_DATA_FILE = map_storage.legacy_path('map_data.py')
+LEGACY_MAP_DATA_FILE = map_storage.legacy_path('map_data.py')
 
 # --- HELPER FUNCTIONS ---
 def load_map_data():
     global NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS
-    map_file = map_storage.resolve_input_path('map_data.py', [MAP_DATA_FILE])
+    map_file = map_storage.resolve_input_path('map_data.py', [LEGACY_MAP_DATA_FILE])
     print(f"Loading data from {map_file}...")
     try:
         with open(map_file, 'r') as f:
@@ -103,7 +103,7 @@ def save_map_data():
         map_storage.write_text_file(
             "map_data.py",
             output.getvalue(),
-            copy_targets=[MAP_DATA_FILE]
+            copy_targets=[LEGACY_MAP_DATA_FILE]
         )
         print("Save successful!")
         return True

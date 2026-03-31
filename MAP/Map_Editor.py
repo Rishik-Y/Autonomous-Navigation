@@ -137,7 +137,10 @@ def handle_save_request() -> SaveResult:
     return SaveResult(False, "ERROR saving map data")
 
 def apply_save_result(save_result: SaveResult, current_is_dirty: bool, current_cache_needs_regen: bool) -> tuple[bool, bool]:
-    """Return (is_dirty, cache_needs_regen) after applying save_result."""
+    """Return (is_dirty, cache_needs_regen) after applying save_result.
+
+    Saves clear the dirty flag and mark cache regeneration as needed; failures preserve existing state.
+    """
     updated_is_dirty = False if save_result.success else current_is_dirty
     updated_cache_needs_regen = current_cache_needs_regen or save_result.success
     return updated_is_dirty, updated_cache_needs_regen
@@ -391,8 +394,9 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                         if choice == "save":
                             save_result = handle_save_request()
                             is_dirty, cache_needs_regen = apply_save_result(save_result, is_dirty, cache_needs_regen)
-                            status_text = save_result.status_text if save_result.success else "ERROR saving map data - mode switch canceled."
+                            status_text = save_result.status_text
                             if not save_result.success:
+                                status_text = f"{status_text} - mode switch canceled."
                                 continue
                         elif choice == "cancel":
                             continue

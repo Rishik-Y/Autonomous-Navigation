@@ -243,8 +243,9 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False):
         draw_waypoints(screen, waypoints_m, g_to_s, scale)
 
         # --- HUD ---
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            f"{mode_label} | TAB: Switch Mode | Pan: Left-Click+Drag | Zoom: Mouse Wheel",
+            f"{mode_label}{tab_hint} | Pan: Left-Click+Drag | Zoom: Mouse Wheel",
             f"Route: {start_node_name} -> {goal_node_name}",
             f"A* Path Nodes: {len(route_node_names)} (Orange Line)",
             f"Spline Waypoints: {len(waypoints_m)} (Blue Dots)"

@@ -132,7 +132,8 @@ def run_viewer(mode_label="Map Viewer", allow_tab_switch=False):
                 screen.blit(text_surface, (g_to_s(pos_m)[0] + 8, g_to_s(pos_m)[1]))
 
         # --- HUD ---
-        hud_text = font.render(f"{mode_label} | TAB: Switch Mode | Pan: Left-Click+Drag | Zoom: Mouse Wheel | Toggle Node Names: N", True, (0,0,0))
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
+        hud_text = font.render(f"{mode_label}{tab_hint} | Pan: Left-Click+Drag | Zoom: Mouse Wheel | Toggle Node Names: N", True, (0,0,0))
         screen.blit(hud_text, (10, 10))
 
         pygame.display.flip()

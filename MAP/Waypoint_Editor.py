@@ -221,8 +221,9 @@ def run_waypoint_editor(mode_label="Waypoint Editor", allow_tab_switch=False):
             draw_waypoints(screen, g_to_s, scale, generated_waypoints_map)
 
         # --- HUD ---
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            f"{mode_label} | TAB: Switch Mode",
+            f"{mode_label}{tab_hint}",
             "CONTROLS: [A] Generate All | [S] Save All | [L] Load from file",
             "PAN/ZOOM: Right-Click+Drag / Mouse Wheel",
             status_text

@@ -70,7 +70,7 @@ class Planner(GlobalPlannerInterface):
             for mine in active_mines:
                 travel_time = self.get_travel_time(start, mine)
                 wait_time = site_states.get(mine, {}).get("en_route", 0) * LOAD_UNLOAD_TIME_S
-                # Simple queue proxy: assume each en-route truck adds one load/unload window.
+                # Simplified queue proxy: each en-route truck adds one load/unload window.
                 total_time = travel_time + wait_time
                 if total_time < best_time:
                     best_time = total_time

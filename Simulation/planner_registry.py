@@ -25,7 +25,10 @@ def _load_planner_class(module_name, base_class):
         candidates = [
             obj
             for obj in module.__dict__.values()
-            if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class
+            if inspect.isclass(obj)
+            and obj.__module__ == module.__name__
+            and issubclass(obj, base_class)
+            and obj is not base_class
         ]
         if len(candidates) != 1:
             raise ImportError(

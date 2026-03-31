@@ -32,4 +32,6 @@ class Planner(LocalPlannerInterface):
             path.append(node)
             node = came_from[node]
         path.reverse()
+        if cache is not None:
+            cache[(start_name, goal_name)] = tuple(path)
         return path

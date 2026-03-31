@@ -60,10 +60,10 @@ def draw_road_network(screen, g_to_s, scale):
         else: color = PURPLE_NODE
         pygame.draw.circle(screen, color, g_to_s(pos_m), max(2, int(scale * 4)))
         
-def run_viewer():
+def run_viewer(mode_label="Map Viewer", allow_tab_switch=False):
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Map Viewer")
+    pygame.display.set_caption(mode_label)
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 14)
 
@@ -90,6 +90,7 @@ def run_viewer():
 
     # --- Main Loop ---
     running = True
+    switch_requested = False
     while running:
         dt = clock.tick(60) / 1000.0
         if dt == 0: continue
@@ -97,6 +98,10 @@ def run_viewer():
         for event in pygame.event.get():
             if event.type == pygame.QUIT: running = False
             elif event.type == pygame.KEYDOWN:
+                if allow_tab_switch and event.key == pygame.K_TAB:
+                    running = False
+                    switch_requested = True
+                    continue
                 if event.key == pygame.K_n:
                     show_node_names = not show_node_names
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -127,12 +132,15 @@ def run_viewer():
                 screen.blit(text_surface, (g_to_s(pos_m)[0] + 8, g_to_s(pos_m)[1]))
 
         # --- HUD ---
-        hud_text = font.render("Map Viewer | Pan: Left-Click+Drag | Zoom: Mouse Wheel | Toggle Node Names: N", True, (0,0,0))
+        hud_text = font.render(f"{mode_label} | TAB: Switch Mode | Pan: Left-Click+Drag | Zoom: Mouse Wheel | Toggle Node Names: N", True, (0,0,0))
         screen.blit(hud_text, (10, 10))
 
         pygame.display.flip()
 
     pygame.quit()
+    if switch_requested:
+        return "next"
+    return None
 
 if __name__ == '__main__':
     run_viewer()

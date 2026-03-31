@@ -4,6 +4,7 @@ import map_data
 import os
 import heapq
 import itertools
+import map_storage
 
 def build_weighted_graph(nodes: dict, edges: list) -> dict:
     """
@@ -93,13 +94,20 @@ def main():
     print(f"\nCached {len(route_cache)} valid routes.")
 
     output_file = 'map_cache.pkl'
-    print(f"Saving graph and route cache to {output_file}...")
+    print(f"Saving graph and route cache to Saved_Map/{output_file}...")
     try:
-        with open(output_file, 'wb') as f:
-            pickle.dump({
-                'road_graph': road_graph,
-                'route_cache': route_cache
-            }, f)
+        data = pickle.dumps({
+            'road_graph': road_graph,
+            'route_cache': route_cache
+        })
+        map_storage.write_binary_file(
+            output_file,
+            data,
+            copy_targets=[
+                map_storage.legacy_path(output_file),
+                map_storage.simulation_path(output_file)
+            ]
+        )
         print("Done! map_cache.pkl regenerated successfully.")
     except Exception as e:
         print(f"Error saving pickle file: {e}")

@@ -127,8 +127,7 @@ def regenerate_map_cache():
 def handle_save_request(is_dirty: bool, cache_needs_regen_current: bool):
     cache_needs_regen_next = cache_needs_regen_current
     if save_map_data():
-        if is_dirty:
-            cache_needs_regen_next = True
+        cache_needs_regen_next = True
         is_dirty = False
         return True, is_dirty, cache_needs_regen_next, "SAVED to Saved_Map/map_data.py"
     return False, is_dirty, cache_needs_regen_current, "ERROR saving map data"
@@ -382,7 +381,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                         if choice == "save":
                             save_ok, is_dirty, cache_needs_regen, status_text = handle_save_request(is_dirty, cache_needs_regen)
                             if not save_ok:
-                                break
+                                continue
                         elif choice == "cancel":
                             continue
                         elif choice == "quit":

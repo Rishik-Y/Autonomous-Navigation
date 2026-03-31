@@ -5,12 +5,16 @@ import math
 import os
 import re
 from ast import literal_eval
-from typing import NamedTuple
+from typing import NamedTuple, Tuple
 import importlib
 import map_data
 import generate_map_cache
 import map_storage
 import map_ui
+
+class SaveResult(NamedTuple):
+    success: bool
+    status_text: str
 
 # --- EDITOR SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -126,17 +130,13 @@ def regenerate_map_cache():
         print(f"Error regenerating map cache: {e}")
         return False
 
-class SaveResult(NamedTuple):
-    success: bool
-    status_text: str
-
 def handle_save_request() -> SaveResult:
     """Attempt to save map data and return a SaveResult with status text."""
     if save_map_data():
         return SaveResult(True, "SAVED to Saved_Map/map_data.py")
     return SaveResult(False, "ERROR saving map data")
 
-def apply_save_result(save_result: SaveResult, current_is_dirty: bool, current_cache_needs_regen: bool) -> tuple[bool, bool]:
+def apply_save_result(save_result: SaveResult, current_is_dirty: bool, current_cache_needs_regen: bool) -> Tuple[bool, bool]:
     """Return (is_dirty, cache_needs_regen) after applying save_result.
 
     Saves clear the dirty flag and mark cache regeneration as needed; failures preserve existing state.
@@ -396,7 +396,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                             is_dirty, cache_needs_regen = apply_save_result(save_result, is_dirty, cache_needs_regen)
                             status_text = save_result.status_text
                             if not save_result.success:
-                                status_text = f"{status_text} - mode switch canceled."
+                                status_text = "Save failed - mode switch canceled."
                                 continue
                         elif choice == "cancel":
                             continue

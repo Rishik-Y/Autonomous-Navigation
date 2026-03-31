@@ -116,6 +116,7 @@ def save_map_data():
         return False
 
 def regenerate_map_cache():
+    """Reload map data and regenerate map_cache.pkl. Returns True on success."""
     print("Regenerating map cache...")
     try:
         importlib.reload(map_data)
@@ -130,6 +131,7 @@ class SaveResult(NamedTuple):
     status_text: str
 
 def handle_save_request() -> SaveResult:
+    """Attempt to save map data and return a SaveResult with status text."""
     if save_map_data():
         return SaveResult(True, "SAVED to Saved_Map/map_data.py")
     return SaveResult(False, "ERROR saving map data")
@@ -390,7 +392,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                             save_result = handle_save_request()
                             is_dirty, status_text, cache_needs_regen = apply_save_result(save_result, is_dirty, cache_needs_regen)
                             if not save_result.success:
-                                status_text = "ERROR saving map data; mode switch canceled."
+                                status_text = "ERROR saving map data - mode switch canceled."
                                 continue
                         elif choice == "cancel":
                             continue

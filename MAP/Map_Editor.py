@@ -124,14 +124,14 @@ def regenerate_map_cache():
         print(f"Error regenerating map cache: {e}")
         return False
 
-def handle_save_request(is_dirty: bool, cache_needs_regen: bool):
+def handle_save_request(is_dirty: bool, cache_needs_regen_current: bool):
     was_dirty = is_dirty
     if save_map_data():
         if was_dirty:
-            cache_needs_regen = True
+            cache_needs_regen_current = True
         is_dirty = False
-        return True, is_dirty, cache_needs_regen, "SAVED to Saved_Map/map_data.py"
-    return False, is_dirty, cache_needs_regen, "ERROR saving map data"
+        return True, is_dirty, cache_needs_regen_current, "SAVED to Saved_Map/map_data.py"
+    return False, is_dirty, cache_needs_regen_current, "ERROR saving map data"
 
 # --- Drawing & Coordinate Functions ---
 PRE_CALCULATED_SPLINES = []
@@ -380,7 +380,9 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     if is_dirty:
                         choice = map_ui.confirm_save_dialog(screen, font, mode_label)
                         if choice == "save":
-                            _, is_dirty, cache_needs_regen, status_text = handle_save_request(is_dirty, cache_needs_regen)
+                            save_ok, is_dirty, cache_needs_regen, status_text = handle_save_request(is_dirty, cache_needs_regen)
+                            if not save_ok:
+                                continue
                         elif choice == "cancel":
                             continue
                         elif choice == "quit":
@@ -391,7 +393,9 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     switch_requested = "prev" if is_reverse else "next"
                     continue
                 if event.key == pygame.K_s:
-                    _, is_dirty, cache_needs_regen, status_text = handle_save_request(is_dirty, cache_needs_regen)
+                    save_ok, is_dirty, cache_needs_regen, status_text = handle_save_request(is_dirty, cache_needs_regen)
+                    if not save_ok:
+                        continue
                 elif event.key == pygame.K_g:
                     mode, brush_color, status_text = 'add_green', GREEN, "Mode: ADD GREEN (Load Zone)"
                     selection_start_node = None

@@ -21,7 +21,7 @@ def run_launcher():
         try:
             result = runner(mode_label=mode_label, allow_tab_switch=True)
         except Exception as exc:
-            print(f"Error running {mode_label}: {exc}")
+            print(f"Launcher exiting due to error in {mode_label}: {exc}")
             break
         if result == "next":
             mode_index = (mode_index + 1) % len(MODES)

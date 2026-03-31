@@ -2,19 +2,20 @@ import numpy as np
 import map_loader as map_data
 from config import *
 import copy
-from GlobalOptimizer import GlobalOptimizer
+from planner_registry import load_global_planner
 
 class Dispatcher:
-    def __init__(self, road_graph, coal_capacities=None):
+    def __init__(self, road_graph, coal_capacities=None, global_planner_name=None):
         self.base_road_graph = copy.deepcopy(road_graph)
         self.current_road_graph = copy.deepcopy(road_graph)
         
         # Global Optimizer Integration
         try:
-            self.optimizer = GlobalOptimizer()
+            planner_name = global_planner_name or DEFAULT_GLOBAL_PLANNER
+            self.optimizer = load_global_planner(planner_name)
             self.use_global_optimization = True
         except Exception as e:
-            print(f"Dispatcher Warning: GlobalOptimizer failed to init ({e}). Using local fallback only.")
+            print(f"Dispatcher Warning: Global planner failed to init ({e}). Using local fallback only.")
             self.optimizer = None
             self.use_global_optimization = False
             

@@ -6,8 +6,9 @@ import time
 from collections import defaultdict
 from config import *
 from graph_adapter import GraphAdapter
+from planner_interface import GlobalPlannerInterface
 
-class GlobalOptimizer:
+class GlobalOptimizer(GlobalPlannerInterface):
     def __init__(self):
         self.adapter = GraphAdapter()
         self.load_zones = map_data.LOAD_ZONES
@@ -272,3 +273,6 @@ class GlobalOptimizer:
                 best_combination = list(combination)
                 
         return best_combination
+
+
+Planner = GlobalOptimizer

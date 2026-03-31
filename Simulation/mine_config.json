@@ -30,5 +30,7 @@
         "load_zone_8": 10000,
         "load_zone_9": 10000
     },
+    "global_planner": "GlobalOptimizer.py",
+    "local_planner": "local_planner_astar.py",
     "truck_count": 3
 }

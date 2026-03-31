@@ -44,3 +44,7 @@ LOOKAHEAD_MIN_M = 4.0
 LOOKAHEAD_MAX_M = 15.0
 MAX_LAT_ACCEL = 2.0
 SENSOR_NOISE_STD_DEV = 0.5
+
+# --- Planner Defaults ---
+DEFAULT_GLOBAL_PLANNER = "GlobalOptimizer.py"
+DEFAULT_LOCAL_PLANNER = "local_planner_astar.py"

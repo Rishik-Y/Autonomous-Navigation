@@ -1,7 +1,7 @@
 import pygame
 
 
-def confirm_save_dialog(screen, font, mode_label: str):
+def confirm_save_dialog(screen, font, mode_label: str, timeout_seconds: int = 120):
     overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 150))
 
@@ -15,7 +15,12 @@ def confirm_save_dialog(screen, font, mode_label: str):
     options_text = "Y: Save | N: Don't Save | Esc: Cancel"
 
     clock = pygame.time.Clock()
+    start_ticks = pygame.time.get_ticks()
     while True:
+        if timeout_seconds is not None:
+            elapsed = (pygame.time.get_ticks() - start_ticks) / 1000.0
+            if elapsed >= timeout_seconds:
+                return "cancel"
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return "quit"

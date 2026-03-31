@@ -671,7 +671,8 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False):
         # --- HUD ---
         tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            f"{mode_label}{tab_hint} | CONTROLS: [G]reen | [R]ed | [O]range | [P]urple | [W]hite | [C]onnect | [D]isconnect | [M]anual | [F]ix | [S]ave",
+            f"{mode_label}{tab_hint}",
+            "CONTROLS: [G]reen | [R]ed | [O]range | [P]urple | [W]hite | [C]onnect | [D]isconnect | [M]anual | [F]ix | [S]ave",
             "PAN/ZOOM: Right-Click+Drag / Mouse Wheel",
             status_text
         ]

@@ -451,7 +451,8 @@ def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False):
         # --- HUD ---
         tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            f"{mode_label}{tab_hint} | CONTROLS: [S]ave | [T]ruck count | [+/-] Adjust trucks | [R]eload map",
+            f"{mode_label}{tab_hint}",
+            "CONTROLS: [S]ave | [T]ruck count | [+/-] Adjust trucks | [R]eload map",
             "PAN/ZOOM: Right-Click+Drag / Mouse Wheel | CLICK on mine to edit",
             f"Trucks: {config['truck_count']} | Total Mines: {len(LOAD_ZONES)}",
             status_text

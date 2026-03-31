@@ -5,11 +5,11 @@ from planner_interface import LocalPlannerInterface
 
 class Planner(LocalPlannerInterface):
     def compute_route(self, graph, start_name, goal_name, cache=None):
-        if cache and (start_name, goal_name) in cache:
-            return list(cache[(start_name, goal_name)])
-
         if start_name not in graph or goal_name not in graph:
             return []
+
+        if cache and (start_name, goal_name) in cache:
+            return list(cache[(start_name, goal_name)])
 
         queue = deque([start_name])
         came_from = {start_name: None}

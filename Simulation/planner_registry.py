@@ -12,7 +12,12 @@ def _normalize_module_name(name):
 
 
 def _load_planner_class(module_name, base_class):
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:
+        raise ImportError(
+            f"Failed to import planner module '{module_name}' for {base_class.__name__}."
+        ) from exc
 
     if hasattr(module, "Planner"):
         planner_class = module.Planner

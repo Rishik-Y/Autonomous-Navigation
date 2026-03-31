@@ -82,8 +82,8 @@ def load_algorithm_config():
             config["global_planner"] = legacy.get("global_planner", DEFAULT_GLOBAL_PLANNER)
             config["local_planner"] = legacy.get("local_planner", DEFAULT_LOCAL_PLANNER)
             print(
-                "No algorithm_config.json found; using planner entries from mine_config.json. "
-                "Move them to algorithm_config.json to keep files separated."
+                "DEPRECATION WARNING: No algorithm_config.json found; using planner entries from "
+                "mine_config.json. Move them to algorithm_config.json to keep files separated."
             )
             return config
 

@@ -387,6 +387,10 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
             
             # --- Keyboard Input for Mode Change ---
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                    switch_requested = None
+                    continue
                 if allow_tab_switch and event.key == pygame.K_TAB:
                     is_reverse = event.mod & pygame.KMOD_SHIFT
                     if is_dirty:

@@ -111,6 +111,19 @@ def save_map_data():
         print(f"Error saving map data: {e}")
         return False
 
+def regenerate_map_cache():
+    print("Regenerating map cache...")
+    try:
+        import importlib
+        import map_data
+        import generate_map_cache
+        importlib.reload(map_data)
+        generate_map_cache.main()
+        return True
+    except Exception as e:
+        print(f"Error regenerating map cache: {e}")
+        return False
+
 # --- Drawing & Coordinate Functions ---
 PRE_CALCULATED_SPLINES = []
 
@@ -327,9 +340,22 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
     brush_color = PURPLE
     status_text = "Mode: ADD PURPLE"
     is_dirty = False
+    cache_needs_regen = False
     selection_start_node = None
     is_drawing_manual = False
     manual_path_px = []
+
+    def handle_save_request():
+        nonlocal is_dirty, cache_needs_regen, status_text
+        was_dirty = is_dirty
+        if save_map_data():
+            if was_dirty:
+                cache_needs_regen = True
+            is_dirty = False
+            status_text = "SAVED to Saved_Map/map_data.py"
+            return True
+        status_text = "ERROR saving map data"
+        return False
     
     # --- View State ---
     all_nodes_m = list(NODES.values()) if NODES else [np.array([0,0])]
@@ -357,9 +383,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     if is_dirty:
                         choice = map_ui.confirm_save_dialog(screen, font, mode_label)
                         if choice == "save":
-                            if save_map_data():
-                                is_dirty = False
-                                status_text = "SAVED to Saved_Map/map_data.py"
+                            handle_save_request()
                         elif choice == "cancel":
                             continue
                         elif choice == "quit":
@@ -370,11 +394,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     switch_requested = "prev" if is_reverse else "next"
                     continue
                 if event.key == pygame.K_s:
-                    if save_map_data():
-                        is_dirty = False
-                        status_text = "SAVED to Saved_Map/map_data.py"
-                    else:
-                        status_text = "ERROR saving map data"
+                    handle_save_request()
                 elif event.key == pygame.K_g:
                     mode, brush_color, status_text = 'add_green', GREEN, "Mode: ADD GREEN (Load Zone)"
                     selection_start_node = None
@@ -685,6 +705,8 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
         pygame.display.flip()
 
     pygame.quit()
+    if cache_needs_regen:
+        regenerate_map_cache()
     return switch_requested
 
 if __name__ == '__main__':

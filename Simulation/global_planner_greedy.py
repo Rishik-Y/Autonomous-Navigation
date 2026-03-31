@@ -1,3 +1,5 @@
+import numpy as np
+
 import map_loader as map_data
 
 from config import LOAD_UNLOAD_TIME_S, SPEED_MS_EMPTY, SPEED_MS_LOADED
@@ -25,9 +27,7 @@ class Planner(GlobalPlannerInterface):
             p1 = map_data.NODES.get(start)
             p2 = map_data.NODES.get(end)
             if p1 is not None and p2 is not None:
-                import numpy as np
-
-                dist = np.linalg.norm(p1 - p2) * 1.5
+                dist = np.linalg.norm(p1 - p2) * 1.5  # Heuristic adjustment for road curvature.
             else:
                 return 60.0
 

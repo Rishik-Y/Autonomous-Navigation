@@ -110,7 +110,12 @@ def run_simulation():
         local_planner = load_local_planner(local_planner_name)
     except Exception as e:
         print(f"Local planner '{local_planner_name}' failed to init ({e}). Falling back to default.")
-        local_planner = load_local_planner(DEFAULT_LOCAL_PLANNER)
+        try:
+            local_planner = load_local_planner(DEFAULT_LOCAL_PLANNER)
+        except Exception as fallback_error:
+            raise RuntimeError(
+                f"Default local planner '{DEFAULT_LOCAL_PLANNER}' failed to init ({fallback_error})."
+            ) from fallback_error
     print(f"Starting simulation with {truck_count} trucks.")
 
     # --- Load Pre-computed Data ---

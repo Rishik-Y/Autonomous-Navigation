@@ -31,4 +31,5 @@ class Planner(LocalPlannerInterface):
         while node is not None:
             path.append(node)
             node = came_from[node]
-        return list(reversed(path))
+        path.reverse()
+        return path

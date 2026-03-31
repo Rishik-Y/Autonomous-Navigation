@@ -16,31 +16,32 @@ from graphics import grid_to_screen, screen_to_grid, draw_road_network, draw_act
 from tooltip_overlay import get_hovered_entity, draw_tooltip
 from planner_registry import load_local_planner
 
+
+def _load_json_file(config_file, label):
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading {label}: {e}")
+    return None
+
 def load_mine_config():
     """Load configuration from mine_config.json, fallback to defaults."""
     config = {
         "truck_count": 5,
         "coal_capacities": {},
-        "global_planner": DEFAULT_GLOBAL_PLANNER,
-        "local_planner": DEFAULT_LOCAL_PLANNER,
     }
     
     config_file = "mine_config.json"
-    if os.path.exists(config_file):
-        try:
-            with open(config_file, 'r') as f:
-                loaded = json.load(f)
-                config["truck_count"] = loaded.get("truck_count", 5)
-                config["coal_capacities"] = loaded.get("coal_capacities", {})
-                config["global_planner"] = loaded.get("global_planner", DEFAULT_GLOBAL_PLANNER)
-                config["local_planner"] = loaded.get("local_planner", DEFAULT_LOCAL_PLANNER)
-                print(
-                    f"Loaded mine config: {config['truck_count']} trucks, "
-                    f"{len(config['coal_capacities'])} mines configured, "
-                    f"global='{config['global_planner']}', local='{config['local_planner']}'."
-                )
-        except Exception as e:
-            print(f"Error loading mine config: {e}, using defaults.")
+    loaded = _load_json_file(config_file, "mine config")
+    if loaded is not None:
+        config["truck_count"] = loaded.get("truck_count", 5)
+        config["coal_capacities"] = loaded.get("coal_capacities", {})
+        print(
+            f"Loaded mine config: {config['truck_count']} trucks, "
+            f"{len(config['coal_capacities'])} mines configured."
+        )
     else:
         # Fallback to truck.txt for backwards compatibility
         if os.path.exists("truck.txt"):
@@ -50,10 +51,46 @@ def load_mine_config():
             except ValueError:
                 pass
         print(
-            f"No mine_config.json found, using defaults with {config['truck_count']} trucks, "
-            f"global='{config['global_planner']}', local='{config['local_planner']}'."
+            f"No mine_config.json found, using defaults with {config['truck_count']} trucks."
         )
     
+    return config
+
+
+def load_algorithm_config():
+    """Load planner selection from algorithm_config.json, with legacy fallback."""
+    config = {
+        "global_planner": DEFAULT_GLOBAL_PLANNER,
+        "local_planner": DEFAULT_LOCAL_PLANNER,
+    }
+    config_file = "algorithm_config.json"
+    loaded = _load_json_file(config_file, "algorithm config")
+    if loaded is not None:
+        config["global_planner"] = loaded.get("global_planner", DEFAULT_GLOBAL_PLANNER)
+        config["local_planner"] = loaded.get("local_planner", DEFAULT_LOCAL_PLANNER)
+        print(
+            f"Loaded algorithm config: global='{config['global_planner']}', "
+            f"local='{config['local_planner']}'."
+        )
+        return config
+
+    legacy = _load_json_file("mine_config.json", "mine config")
+    if legacy:
+        legacy_global = legacy.get("global_planner")
+        legacy_local = legacy.get("local_planner")
+        if legacy_global or legacy_local:
+            config["global_planner"] = legacy.get("global_planner", DEFAULT_GLOBAL_PLANNER)
+            config["local_planner"] = legacy.get("local_planner", DEFAULT_LOCAL_PLANNER)
+            print(
+                "No algorithm_config.json found; using planner entries from mine_config.json. "
+                "Move them to algorithm_config.json to keep files separated."
+            )
+            return config
+
+    print(
+        f"No algorithm_config.json found, using defaults "
+        f"global='{config['global_planner']}', local='{config['local_planner']}'."
+    )
     return config
 
 def get_path_from_nodes(route_node_names, waypoints_map):
@@ -102,10 +139,11 @@ def run_simulation():
 
     # --- Load Mine Configuration ---
     mine_config = load_mine_config()
+    algorithm_config = load_algorithm_config()
     truck_count = mine_config["truck_count"]
     coal_capacities = mine_config["coal_capacities"]
-    global_planner_name = mine_config["global_planner"]
-    local_planner_name = mine_config["local_planner"]
+    global_planner_name = algorithm_config["global_planner"]
+    local_planner_name = algorithm_config["local_planner"]
     try:
         local_planner = load_local_planner(local_planner_name)
     except Exception as e:

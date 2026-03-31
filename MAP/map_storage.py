@@ -39,7 +39,7 @@ def _ensure_parent(path: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
 
-def _history_filename(filename: str) -> str:
+def _history_path(filename: str) -> str:
     base, ext = os.path.splitext(os.path.basename(filename))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return os.path.join(HISTORY_DIR, f"{base}_{timestamp}{ext}")
@@ -48,7 +48,7 @@ def _history_filename(filename: str) -> str:
 def _backup_existing(saved_file: str):
     if os.path.exists(saved_file):
         ensure_dirs()
-        history_file = _history_filename(saved_file)
+        history_file = _history_path(saved_file)
         shutil.copy2(saved_file, history_file)
 
 

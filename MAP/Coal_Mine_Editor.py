@@ -23,7 +23,7 @@ METERS_TO_PIXELS = 6.0
 PIXELS_TO_METERS = 1.0 / METERS_TO_PIXELS
 CLICK_THRESHOLD_PX = 20
 
-MAP_DATA_FILE = map_storage.legacy_path('map_data.py')
+MAP_DATA_LEGACY_PATH = map_storage.legacy_path('map_data.py')
 CONFIG_FILENAME = 'mine_config.json'
 DEFAULT_COAL_CAPACITY = 100
 DEFAULT_TRUCK_COUNT = 5
@@ -45,7 +45,7 @@ config = {
 def load_map_data():
     """Load map data from map_data.py"""
     global NODES, EDGES, LOAD_ZONES, DUMP_ZONES, VISUAL_ROAD_CHAINS
-    map_file = map_storage.resolve_input_path('map_data.py', [MAP_DATA_FILE])
+    map_file = map_storage.resolve_input_path('map_data.py', [MAP_DATA_LEGACY_PATH])
     print(f"Loading map data from {map_file}...")
     try:
         with open(map_file, 'r') as f:

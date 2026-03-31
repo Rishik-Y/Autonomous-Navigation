@@ -8,11 +8,15 @@ MAP_DIR = os.path.join(REPO_ROOT, "MAP")
 
 
 def run_simulation():
-    subprocess.run([sys.executable, "main.py"], cwd=SIMULATION_DIR)
+    result = subprocess.run([sys.executable, "main.py"], cwd=SIMULATION_DIR)
+    if result.returncode != 0:
+        print(f"Simulation exited with code {result.returncode}.")
 
 
 def run_map():
-    subprocess.run([sys.executable, "unified_map_launcher.py"], cwd=MAP_DIR)
+    result = subprocess.run([sys.executable, "unified_map_launcher.py"], cwd=MAP_DIR)
+    if result.returncode != 0:
+        print(f"Map tools exited with code {result.returncode}.")
 
 
 def main():

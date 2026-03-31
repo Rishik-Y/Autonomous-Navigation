@@ -257,7 +257,7 @@ def run_simulation():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
-                elif event.key == pygame.K_SPACE or event.key == pygame.K_p:
+                elif event.key in (pygame.K_SPACE, pygame.K_p):
                     paused = not paused
                 elif event.mod & pygame.KMOD_SHIFT:
                     if event.key == pygame.K_1:
@@ -403,7 +403,7 @@ def run_simulation():
                 f"Dispatcher: Advanced (Swarm Plan)",
                 f"Active Trucks: {len(cars)}",
                 f"Sim Speed: {sim_speed}x | {'Paused' if paused else 'Running'}",
-                "Controls: TAB switch | SPACE play/pause | SHIFT+0-5 speed | ESC back"
+                "Controls: TAB switch | SPACE play/pause | SHIFT+0 (0.5x) | SHIFT+1-5 (1-5x) | ESC back"
             ]
             for i, text in enumerate(hud_texts):
                 screen.blit(font.render(text, True, (0, 0, 0)), (10, 10 + i * 22))

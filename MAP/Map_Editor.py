@@ -5,6 +5,9 @@ import math
 import os
 import re
 from ast import literal_eval
+import importlib
+import map_data
+import generate_map_cache
 import map_storage
 import map_ui
 
@@ -114,15 +117,21 @@ def save_map_data():
 def regenerate_map_cache():
     print("Regenerating map cache...")
     try:
-        import importlib
-        import map_data
-        import generate_map_cache
         importlib.reload(map_data)
         generate_map_cache.main()
         return True
     except Exception as e:
         print(f"Error regenerating map cache: {e}")
         return False
+
+def handle_save_request(is_dirty: bool, cache_needs_regen: bool):
+    was_dirty = is_dirty
+    if save_map_data():
+        if was_dirty:
+            cache_needs_regen = True
+        is_dirty = False
+        return True, is_dirty, cache_needs_regen, "SAVED to Saved_Map/map_data.py"
+    return False, is_dirty, cache_needs_regen, "ERROR saving map data"
 
 # --- Drawing & Coordinate Functions ---
 PRE_CALCULATED_SPLINES = []
@@ -344,18 +353,6 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
     selection_start_node = None
     is_drawing_manual = False
     manual_path_px = []
-
-    def handle_save_request():
-        nonlocal is_dirty, cache_needs_regen, status_text
-        was_dirty = is_dirty
-        if save_map_data():
-            if was_dirty:
-                cache_needs_regen = True
-            is_dirty = False
-            status_text = "SAVED to Saved_Map/map_data.py"
-            return True
-        status_text = "ERROR saving map data"
-        return False
     
     # --- View State ---
     all_nodes_m = list(NODES.values()) if NODES else [np.array([0,0])]
@@ -383,7 +380,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     if is_dirty:
                         choice = map_ui.confirm_save_dialog(screen, font, mode_label)
                         if choice == "save":
-                            handle_save_request()
+                            _, is_dirty, cache_needs_regen, status_text = handle_save_request(is_dirty, cache_needs_regen)
                         elif choice == "cancel":
                             continue
                         elif choice == "quit":
@@ -394,7 +391,7 @@ def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None,
                     switch_requested = "prev" if is_reverse else "next"
                     continue
                 if event.key == pygame.K_s:
-                    handle_save_request()
+                    _, is_dirty, cache_needs_regen, status_text = handle_save_request(is_dirty, cache_needs_regen)
                 elif event.key == pygame.K_g:
                     mode, brush_color, status_text = 'add_green', GREEN, "Mode: ADD GREEN (Load Zone)"
                     selection_start_node = None

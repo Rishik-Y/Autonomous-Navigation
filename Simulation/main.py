@@ -109,7 +109,10 @@ def run_simulation():
     try:
         local_planner = load_local_planner(local_planner_name)
     except Exception as e:
-        print(f"Local planner '{local_planner_name}' failed to init ({e}). Falling back to default.")
+        print(
+            f"Local planner '{local_planner_name}' failed to init ({type(e).__name__}: {e}). "
+            "Falling back to default."
+        )
         try:
             local_planner = load_local_planner(DEFAULT_LOCAL_PLANNER)
         except Exception as fallback_error:

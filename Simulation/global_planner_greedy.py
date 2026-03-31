@@ -6,6 +6,9 @@ from config import LOAD_UNLOAD_TIME_S, SPEED_MS_EMPTY, SPEED_MS_LOADED
 from graph_adapter import GraphAdapter
 from planner_interface import GlobalPlannerInterface
 
+ROAD_CURVATURE_FACTOR = 1.5
+DEFAULT_TRAVEL_TIME_S = 60.0
+
 
 class Planner(GlobalPlannerInterface):
     def __init__(self):
@@ -27,9 +30,9 @@ class Planner(GlobalPlannerInterface):
             p1 = map_data.NODES.get(start)
             p2 = map_data.NODES.get(end)
             if p1 is not None and p2 is not None:
-                dist = np.linalg.norm(p1 - p2) * 1.5  # Heuristic adjustment for road curvature.
+                dist = np.linalg.norm(p1 - p2) * ROAD_CURVATURE_FACTOR
             else:
-                return 60.0
+                return DEFAULT_TRAVEL_TIME_S
 
         speed = SPEED_MS_LOADED if end in map_data.DUMP_ZONES else SPEED_MS_EMPTY
         return max(1.0, dist / speed)

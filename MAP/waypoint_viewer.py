@@ -6,6 +6,8 @@ import random
 import pickle # Added for loading waypoints.pkl
 import os     # Added for checking file existence
 import map_data
+import map_storage
+import map_ui
 
 # --- VISUAL & GAME SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -139,15 +141,21 @@ def draw_node_path(screen, node_path_names, g_to_s, scale):
     pygame.draw.lines(screen, NODE_PATH_COLOR, False, path_px, max(2, int(scale * 3)))
 
 
-def run_viewer():
+def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=None, total_modes=None):
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Waypoint Viewer")
+    pygame.display.set_caption(mode_label)
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 14)
 
     # --- Load Pre-computed Data ---
-    waypoints_filepath = 'waypoints.pkl'
+    waypoints_filepath = map_storage.resolve_input_path(
+        'waypoints.pkl',
+        [
+            map_storage.legacy_path('waypoints.pkl'),
+            map_storage.simulation_path('waypoints.pkl')
+        ]
+    )
     if not os.path.exists(waypoints_filepath):
         print(f"Error: Waypoint file '{waypoints_filepath}' not found.")
         print(f"Please run 'python Waypoint_Editor.py', press 'A' then 'S' to generate the file.")
@@ -157,10 +165,16 @@ def run_viewer():
         waypoints_map = pickle.load(f)
     print(f"Loaded {len(waypoints_map)} pre-calculated road paths.")
 
-    cache_filename = 'map_cache.pkl'
+    cache_filename = map_storage.resolve_input_path(
+        'map_cache.pkl',
+        [
+            map_storage.legacy_path('map_cache.pkl'),
+            map_storage.simulation_path('map_cache.pkl')
+        ]
+    )
     if not os.path.exists(cache_filename):
         print(f"Error: Map cache file '{cache_filename}' not found.")
-        print(f"Please run 'python map_data.py' to generate the cache file first.")
+        print(f"Please run 'python generate_map_cache.py' to generate the cache file first.")
         return
 
     with open(cache_filename, 'rb') as f:
@@ -188,6 +202,7 @@ def run_viewer():
 
     # --- Main Loop ---
     running = True
+    switch_requested = None
     while running:
         dt = clock.tick(60) / 1000.0
         if dt == 0: continue
@@ -209,6 +224,12 @@ def run_viewer():
                 pan[0] += dx
                 pan[1] += dy
                 last_mouse_pos = event.pos
+            elif event.type == pygame.KEYDOWN:
+                if allow_tab_switch and event.key == pygame.K_TAB:
+                    is_reverse = event.mod & pygame.KMOD_SHIFT
+                    running = False
+                    switch_requested = "prev" if is_reverse else "next"
+                    continue
 
         # --- Drawing ---
         screen.fill(WHITE)
@@ -224,8 +245,9 @@ def run_viewer():
         draw_waypoints(screen, waypoints_m, g_to_s, scale)
 
         # --- HUD ---
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            "Waypoint Viewer | Pan: Left-Click+Drag | Zoom: Mouse Wheel",
+            f"{mode_label}{tab_hint} | Pan: Left-Click+Drag | Zoom: Mouse Wheel",
             f"Route: {start_node_name} -> {goal_node_name}",
             f"A* Path Nodes: {len(route_node_names)} (Orange Line)",
             f"Spline Waypoints: {len(waypoints_m)} (Blue Dots)"
@@ -233,10 +255,12 @@ def run_viewer():
         for i, text in enumerate(hud_texts):
             text_surface = font.render(text, True, (0,0,0))
             screen.blit(text_surface, (10, 10 + i * 20))
+        map_ui.draw_mode_overlay(screen, font, mode_label, mode_index, total_modes, False)
 
         pygame.display.flip()
 
     pygame.quit()
+    return switch_requested
 
 if __name__ == '__main__':
     run_viewer()

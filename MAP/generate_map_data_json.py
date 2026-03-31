@@ -2,6 +2,7 @@ import json
 import numpy as np
 import map_data
 import os
+import map_storage
 
 def generate_json():
     print("Generating map_data.json from map_data.py...")
@@ -39,9 +40,13 @@ def generate_json():
 
     output_file = 'map_data.json'
     try:
-        with open(output_file, 'w') as f:
-            json.dump(data, f, indent=4)
-        print(f"Successfully generated {output_file} with {len(nodes_dict)} nodes.")
+        content = json.dumps(data, indent=4)
+        map_storage.write_text_file(
+            output_file,
+            content,
+            copy_targets=[map_storage.simulation_path(output_file)]
+        )
+        print(f"Successfully generated Saved_Map/{output_file} with {len(nodes_dict)} nodes.")
     except Exception as e:
         print(f"Error generating JSON: {e}")
 

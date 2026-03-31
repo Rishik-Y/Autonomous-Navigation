@@ -6,6 +6,8 @@ import pygame
 import numpy as np
 import json
 import os
+import map_storage
+import map_ui
 
 # --- EDITOR SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -21,8 +23,8 @@ METERS_TO_PIXELS = 6.0
 PIXELS_TO_METERS = 1.0 / METERS_TO_PIXELS
 CLICK_THRESHOLD_PX = 20
 
-MAP_DATA_FILE = 'map_data.py'
-CONFIG_FILE = 'mine_config.json'
+MAP_DATA_LEGACY_PATH = map_storage.legacy_path('map_data.py')
+CONFIG_FILENAME = 'mine_config.json'
 DEFAULT_COAL_CAPACITY = 100
 DEFAULT_TRUCK_COUNT = 5
 
@@ -43,9 +45,10 @@ config = {
 def load_map_data():
     """Load map data from map_data.py"""
     global NODES, EDGES, LOAD_ZONES, DUMP_ZONES, VISUAL_ROAD_CHAINS
-    print(f"Loading map data from {MAP_DATA_FILE}...")
+    map_file = map_storage.resolve_input_path('map_data.py', [MAP_DATA_LEGACY_PATH])
+    print(f"Loading map data from {map_file}...")
     try:
-        with open(MAP_DATA_FILE, 'r') as f:
+        with open(map_file, 'r') as f:
             content = f.read()
         
         sandbox = {'np': np}
@@ -65,9 +68,16 @@ def load_map_data():
 def load_config():
     """Load configuration from mine_config.json"""
     global config
-    if os.path.exists(CONFIG_FILE):
+    config_path = map_storage.resolve_input_path(
+        CONFIG_FILENAME,
+        [
+            map_storage.legacy_path(CONFIG_FILENAME),
+            map_storage.simulation_path(CONFIG_FILENAME)
+        ]
+    )
+    if os.path.exists(config_path):
         try:
-            with open(CONFIG_FILE, 'r') as f:
+            with open(config_path, 'r') as f:
                 config = json.load(f)
             print(f"Loaded config: {config['truck_count']} trucks, {len(config['coal_capacities'])} mines configured.")
         except Exception as e:
@@ -108,9 +118,16 @@ def save_config():
     """Save configuration to mine_config.json"""
     global config
     try:
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=4, sort_keys=True)
-        print(f"Config saved to {CONFIG_FILE}")
+        content = json.dumps(config, indent=4, sort_keys=True)
+        map_storage.write_text_file(
+            CONFIG_FILENAME,
+            content,
+            copy_targets=[
+                map_storage.legacy_path(CONFIG_FILENAME),
+                map_storage.simulation_path(CONFIG_FILENAME)
+            ]
+        )
+        print("Config saved to Saved_Map/mine_config.json")
         return True
     except Exception as e:
         print(f"Error saving config: {e}")
@@ -281,11 +298,11 @@ def show_input_dialog(screen, font, title, current_value):
     return None
 
 # --- Main Editor Loop ---
-def run_editor():
+def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index=None, total_modes=None):
     global config
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Coal Mine Editor - Configure Coal Capacities")
+    pygame.display.set_caption(mode_label)
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 16)
     small_font = pygame.font.SysFont("Consolas", 12)
@@ -298,6 +315,7 @@ def run_editor():
 
     # Status text
     status_text = "Click on a mine to edit its coal capacity"
+    is_dirty = False
     
     # --- View State ---
     all_nodes_m = list(NODES.values()) if NODES else [np.array([0, 0])]
@@ -323,6 +341,7 @@ def run_editor():
     hovered_mine = None
 
     running = True
+    switch_requested = None
     while running:
         clock.tick(60)
         mouse_pos = pygame.mouse.get_pos()
@@ -332,19 +351,39 @@ def run_editor():
                 running = False
             
             elif event.type == pygame.KEYDOWN:
+                if allow_tab_switch and event.key == pygame.K_TAB:
+                    is_reverse = event.mod & pygame.KMOD_SHIFT
+                    if is_dirty:
+                        choice = map_ui.confirm_save_dialog(screen, font, mode_label)
+                        if choice == "save":
+                            if save_config():
+                                is_dirty = False
+                                status_text = "Configuration SAVED to Saved_Map/mine_config.json"
+                        elif choice == "cancel":
+                            continue
+                        elif choice == "quit":
+                            running = False
+                            switch_requested = None
+                            continue
+                    running = False
+                    switch_requested = "prev" if is_reverse else "next"
+                    continue
                 # Save config
                 if event.key == pygame.K_s:
                     if save_config():
-                        status_text = "Configuration SAVED to mine_config.json"
+                        is_dirty = False
+                        status_text = "Configuration SAVED to Saved_Map/mine_config.json"
                     else:
                         status_text = "ERROR saving configuration!"
                 
                 # Adjust truck count with +/- keys
                 elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
                     config["truck_count"] = min(20, config["truck_count"] + 1)
+                    is_dirty = True
                     status_text = f"Truck count: {config['truck_count']}"
                 elif event.key == pygame.K_MINUS:
                     config["truck_count"] = max(1, config["truck_count"] - 1)
+                    is_dirty = True
                     status_text = f"Truck count: {config['truck_count']}"
                 
                 # Edit truck count directly with T
@@ -352,6 +391,7 @@ def run_editor():
                     new_count = show_input_dialog(screen, font, "Enter truck count:", config["truck_count"])
                     if new_count is not None:
                         config["truck_count"] = max(1, min(50, new_count))
+                        is_dirty = True
                         status_text = f"Truck count set to: {config['truck_count']}"
                 
                 # Reload map data with R
@@ -369,6 +409,7 @@ def run_editor():
                         new_cap = show_input_dialog(screen, font, f"Coal capacity for {clicked_mine}:", current_cap)
                         if new_cap is not None:
                             config["coal_capacities"][clicked_mine] = max(0, new_cap)
+                            is_dirty = True
                             status_text = f"Set {clicked_mine} capacity to {new_cap} kg"
                 
                 elif event.button == 3:  # Right click - start panning
@@ -409,9 +450,11 @@ def run_editor():
         draw_coal_mines(screen, g_to_s, scale, small_font, hovered_mine)
 
         # --- HUD ---
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            f"CONTROLS: [S]ave | [T]ruck count | [+/-] Adjust trucks | [R]eload map",
-            f"PAN/ZOOM: Right-Click+Drag / Mouse Wheel | CLICK on mine to edit",
+            f"{mode_label}{tab_hint}",
+            "CONTROLS: [S]ave | [T]ruck count | [+/-] Adjust trucks | [R]eload map",
+            "PAN/ZOOM: Right-Click+Drag / Mouse Wheel | CLICK on mine to edit",
             f"Trucks: {config['truck_count']} | Total Mines: {len(LOAD_ZONES)}",
             status_text
         ]
@@ -419,6 +462,7 @@ def run_editor():
         for i, text in enumerate(hud_texts):
             text_surface = font.render(text, True, BLACK)
             screen.blit(text_surface, (10, 10 + i * 22))
+        map_ui.draw_mode_overlay(screen, font, mode_label, mode_index, total_modes, is_dirty)
         
         # Draw hover info
         if hovered_mine and hovered_mine in config["coal_capacities"]:
@@ -431,6 +475,7 @@ def run_editor():
         pygame.display.flip()
 
     pygame.quit()
+    return switch_requested
 
 if __name__ == '__main__':
     run_editor()

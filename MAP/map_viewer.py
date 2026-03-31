@@ -2,6 +2,7 @@ import pygame
 import numpy as np
 import math
 import map_data
+import map_ui
 
 # --- VISUAL & GAME SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -60,10 +61,10 @@ def draw_road_network(screen, g_to_s, scale):
         else: color = PURPLE_NODE
         pygame.draw.circle(screen, color, g_to_s(pos_m), max(2, int(scale * 4)))
         
-def run_viewer():
+def run_viewer(mode_label="Map Viewer", allow_tab_switch=False, mode_index=None, total_modes=None):
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Map Viewer")
+    pygame.display.set_caption(mode_label)
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 14)
 
@@ -90,6 +91,7 @@ def run_viewer():
 
     # --- Main Loop ---
     running = True
+    switch_requested = None
     while running:
         dt = clock.tick(60) / 1000.0
         if dt == 0: continue
@@ -97,6 +99,11 @@ def run_viewer():
         for event in pygame.event.get():
             if event.type == pygame.QUIT: running = False
             elif event.type == pygame.KEYDOWN:
+                if allow_tab_switch and event.key == pygame.K_TAB:
+                    is_reverse = event.mod & pygame.KMOD_SHIFT
+                    running = False
+                    switch_requested = "prev" if is_reverse else "next"
+                    continue
                 if event.key == pygame.K_n:
                     show_node_names = not show_node_names
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -127,12 +134,15 @@ def run_viewer():
                 screen.blit(text_surface, (g_to_s(pos_m)[0] + 8, g_to_s(pos_m)[1]))
 
         # --- HUD ---
-        hud_text = font.render("Map Viewer | Pan: Left-Click+Drag | Zoom: Mouse Wheel | Toggle Node Names: N", True, (0,0,0))
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
+        hud_text = font.render(f"{mode_label}{tab_hint} | Pan: Left-Click+Drag | Zoom: Mouse Wheel | Toggle Node Names: N", True, (0,0,0))
         screen.blit(hud_text, (10, 10))
+        map_ui.draw_mode_overlay(screen, font, mode_label, mode_index, total_modes, False)
 
         pygame.display.flip()
 
     pygame.quit()
+    return switch_requested
 
 if __name__ == '__main__':
     run_viewer()

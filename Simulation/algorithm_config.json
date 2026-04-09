@@ -1,4 +1,4 @@
 {
-    "global_planner": "GlobalOptimizer.py",
-    "local_planner": "local_planner_astar.py"
+    "global_planner": "global_planner_greedy.py",
+    "local_planner": "local_planner_bfs.py"
 }

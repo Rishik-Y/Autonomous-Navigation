@@ -1,8 +1,8 @@
 import numpy as np
-import map_loader as map_data
+from Map import map_loader as map_data
 from config import *
 import copy
-from planner_registry import load_global_planner
+from Algorithm.planner_registry import load_global_planner
 
 class Dispatcher:
     def __init__(self, road_graph, coal_capacities=None, global_planner_name=None):
@@ -11,7 +11,7 @@ class Dispatcher:
         
         # Global Optimizer Integration
         try:
-            planner_name = global_planner_name or DEFAULT_GLOBAL_PLANNER
+            planner_name = global_planner_name
             self.optimizer = load_global_planner(planner_name)
             self.use_global_optimization = True
         except Exception as e:

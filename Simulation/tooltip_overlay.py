@@ -4,7 +4,7 @@ Provides hover detection and tooltip rendering for mines, trucks, and dump sites
 """
 import pygame
 import numpy as np
-import map_loader as map_data
+from Map import map_loader as map_data
 from config import METERS_TO_PIXELS, PIXELS_TO_METERS, CAR_LENGTH_M
 
 # Click/hover threshold in pixels

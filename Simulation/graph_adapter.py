@@ -1,11 +1,11 @@
 import pickle
 import numpy as np
-import map_loader as map_data
+from Map import map_loader as map_data
 import math
 from config import POINTS_PER_SEGMENT
 
 class GraphAdapter:
-    def __init__(self, map_cache_path='map_cache.pkl', waypoints_path='waypoints.pkl'):
+    def __init__(self, map_cache_path='Map/map_cache.pkl', waypoints_path='Map/waypoints.pkl'):
         self.road_graph = {}
         self.route_cache = {}
         self.waypoints_map = {}

@@ -7,14 +7,14 @@ import os
 import json
 
 # --- Module Imports ---
-import map_loader as map_data
+from Map import map_loader as map_data
 from config import *
 from utils import Path, KalmanFilter
 from car import Car
 from dispatcher import Dispatcher
 from graphics import grid_to_screen, screen_to_grid, draw_road_network, draw_active_path
 from tooltip_overlay import get_hovered_entity, draw_tooltip
-from planner_registry import load_local_planner
+from Algorithm.planner_registry import load_local_planner, DEFAULT_GLOBAL_PLANNER, DEFAULT_LOCAL_PLANNER
 
 
 def _load_json_file(config_file, label):
@@ -27,13 +27,18 @@ def _load_json_file(config_file, label):
     return None
 
 def load_mine_config():
-    """Load configuration from mine_config.json, fallback to defaults."""
+    """Load configuration from Map/mine_config.json, fallback to defaults."""
+    default_config = {
+        "truck_count": 8,
+        "coal_capacities": [5.0] * 8
+    }
+
     config = {
         "truck_count": 5,
         "coal_capacities": {},
     }
     
-    config_file = "mine_config.json"
+    config_file = "Map/mine_config.json"
     loaded = _load_json_file(config_file, "mine config")
     if loaded is not None:
         config["truck_count"] = loaded.get("truck_count", 5)
@@ -51,7 +56,7 @@ def load_mine_config():
             except ValueError:
                 pass
         print(
-            f"No mine_config.json found, using defaults with {config['truck_count']} trucks."
+            f"No Map/mine_config.json found, using defaults with {config['truck_count']} trucks."
         )
     
     return config
@@ -72,19 +77,17 @@ def load_algorithm_config():
             f"Loaded algorithm config: global='{config['global_planner']}', "
             f"local='{config['local_planner']}'."
         )
-        return config
-
-    legacy = _load_json_file("mine_config.json", "mine config")
+    # 2) Fallback to legacy mine_config.json for simulation parameters
+    legacy = _load_json_file("Map/mine_config.json", "mine config")
     if legacy:
         legacy_global = legacy.get("global_planner")
         legacy_local = legacy.get("local_planner")
         if legacy_global or legacy_local:
             config["global_planner"] = legacy.get("global_planner", DEFAULT_GLOBAL_PLANNER)
             config["local_planner"] = legacy.get("local_planner", DEFAULT_LOCAL_PLANNER)
-            print(
-                "DEPRECATION WARNING: No algorithm_config.json found; using planner entries from "
-                "mine_config.json. Move them to algorithm_config.json to keep files separated."
-            )
+            print("WARNING: 'truck_count' found in 'algorithm_config.json' and 'Map/mine_config.json'.")
+            print("         Prioritizing 'algorithm_config.json'. If these are algorithm settings, remove them from")
+            print("         Map/mine_config.json. Move them to algorithm_config.json to keep files separated.")
             return config
 
     print(
@@ -159,9 +162,11 @@ def run_simulation():
             ) from fallback_error
     print(f"Starting simulation with {truck_count} trucks.")
 
-    # --- Load Pre-computed Data ---
-    waypoints_filepath = 'waypoints.pkl'
-    cache_filename = 'map_cache.pkl'
+    # ---------------------------------------------------------
+    # 2. LOAD PRE-CALCULATED DATA
+    # ---------------------------------------------------------
+    waypoints_filepath = 'Map/waypoints.pkl'
+    cache_filename = 'Map/map_cache.pkl'
     
     if not os.path.exists(cache_filename):
          print(f"Warning: Local '{cache_filename}' not found. Pathfinding might fail if graph is missing.")
@@ -466,7 +471,8 @@ def run_simulation():
                 kf.predict(u=accel_vec_m)
                 kf.update(z=car.get_noisy_measurement())
 
-            # Draw
+        # Draw ALL trucks (must be outside `if sim_dt > 0` so trucks render when paused)
+        for idx, car in enumerate(cars):
             if car.path and idx == selected_car_idx:
                  draw_active_path(screen, car.path, g_to_s, scale)
             car.draw(screen, g_to_s, is_selected=(idx == selected_car_idx))

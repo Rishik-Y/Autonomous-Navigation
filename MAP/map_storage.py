@@ -22,7 +22,9 @@ def legacy_path(filename: str) -> str:
 
 
 def simulation_path(filename: str) -> str:
-    return os.path.join(SIMULATION_DIR, filename)
+    target_dir = os.path.join(SIMULATION_DIR, "Map")
+    os.makedirs(target_dir, exist_ok=True)
+    return os.path.join(target_dir, filename)
 
 
 def resolve_input_path(filename: str, fallback_paths=None) -> str:
@@ -46,10 +48,11 @@ def _history_path(filename: str) -> str:
 
 
 def _backup_existing(saved_file: str):
-    if os.path.exists(saved_file):
-        ensure_dirs()
-        history_file = _history_path(saved_file)
-        shutil.copy2(saved_file, history_file)
+    """
+    DISABLED: This function previously backed up individual files.
+    Now only used internally. Snapshot system handles all backups.
+    """
+    pass  # No longer creates individual file backups
 
 
 def write_text_file(filename: str, content: str, copy_targets=None) -> str:
@@ -76,3 +79,42 @@ def write_binary_file(filename: str, data: bytes, copy_targets=None) -> str:
         _ensure_parent(target)
         shutil.copy2(dest, target)
     return dest
+
+
+def create_snapshot():
+    """
+    Create a timestamp folder in History/ and copy all map files.
+    Stops launcher if any file copy fails.
+    Returns: path to created snapshot folder
+    """
+    # Generate timestamp folder name: 2026-04-07_16-10-30
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    snapshot_folder = os.path.join(HISTORY_DIR, timestamp)
+    
+    # Create folder
+    os.makedirs(snapshot_folder, exist_ok=True)
+    
+    # Files to copy (all 4-5 files regardless of which was modified)
+    files_to_copy = [
+        'map_data.py',
+        'mine_config.json',
+        'waypoints.pkl',
+        'map_cache.pkl',
+        'map_data.json'  # optional, will skip if not exists
+    ]
+    
+    # Copy each file if it exists
+    for filename in files_to_copy:
+        source = saved_path(filename)
+        if os.path.exists(source):
+            dest = os.path.join(snapshot_folder, filename)
+            try:
+                shutil.copy2(source, dest)
+            except Exception as e:
+                print(f"ERROR: Failed to copy {filename} to snapshot: {e}")
+                print("Stopping launcher due to snapshot creation failure.")
+                input("Press Enter to exit...")
+                os._exit(1)  # Force stop launcher
+    
+    print(f"Snapshot created: {snapshot_folder}")
+    return snapshot_folder

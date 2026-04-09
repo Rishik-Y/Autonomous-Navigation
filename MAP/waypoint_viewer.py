@@ -141,12 +141,19 @@ def draw_node_path(screen, node_path_names, g_to_s, scale):
     pygame.draw.lines(screen, NODE_PATH_COLOR, False, path_px, max(2, int(scale * 3)))
 
 
-def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=None, total_modes=None):
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption(mode_label)
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("Consolas", 14)
+def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=None, total_modes=None, _shared_screen=None, _shared_font=None, _view_state=None):
+    # Use shared screen if provided (single-window mode), otherwise create new window
+    if _shared_screen is not None:
+        screen = _shared_screen
+        font = _shared_font
+        pygame.init()  # Initialize pygame even if using shared screen
+        clock = pygame.time.Clock()
+    else:
+        pygame.init()
+        screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+        pygame.display.set_caption(mode_label)
+        clock = pygame.time.Clock()
+        font = pygame.font.SysFont("Consolas", 14)
 
     # --- Load Pre-computed Data ---
     waypoints_filepath = map_storage.resolve_input_path(
@@ -192,23 +199,29 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=
     print(f"Generated {len(waypoints_m)} waypoints for the truck to follow.")
 
     # --- Setup View ---
-    all_nodes_m = list(map_data.NODES.values())
-    min_x_m, max_x_m = min(p[0] for p in all_nodes_m), max(p[0] for p in all_nodes_m)
-    min_y_m, max_y_m = min(p[1] for p in all_nodes_m), max(p[1] for p in all_nodes_m)
-    map_w_m, map_h_m = max(1.0, max_x_m - min_x_m), max(1.0, max_y_m - min_y_m)
-    scale = min((WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS), (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS))
-    pan = [PADDING - (min_x_m * METERS_TO_PIXELS * scale), PADDING - (min_y_m * METERS_TO_PIXELS * scale)]
+    if _view_state is not None:
+        scale = _view_state['scale']
+        pan = _view_state['pan']
+    else:
+        all_nodes_m = list(map_data.NODES.values())
+        min_x_m, max_x_m = min(p[0] for p in all_nodes_m), max(p[0] for p in all_nodes_m)
+        min_y_m, max_y_m = min(p[1] for p in all_nodes_m), max(p[1] for p in all_nodes_m)
+        map_w_m, map_h_m = max(1.0, max_x_m - min_x_m), max(1.0, max_y_m - min_y_m)
+        scale = min((WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS), (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS))
+        pan = [PADDING - (min_x_m * METERS_TO_PIXELS * scale), PADDING - (min_y_m * METERS_TO_PIXELS * scale)]
     mouse_dragging, last_mouse_pos = False, None
 
     # --- Main Loop ---
     running = True
-    switch_requested = None
+    switch_requested = "quit"
     while running:
         dt = clock.tick(60) / 1000.0
         if dt == 0: continue
 
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: running = False
+            if event.type == pygame.QUIT: 
+                running = False
+                switch_requested = "quit"
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1: mouse_dragging, last_mouse_pos = True, event.pos
                 elif event.button in (4, 5):
@@ -227,7 +240,7 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
-                    switch_requested = None
+                    switch_requested = "quit"
                     continue
                 if allow_tab_switch and event.key == pygame.K_TAB:
                     is_reverse = event.mod & pygame.KMOD_SHIFT
@@ -263,8 +276,14 @@ def run_viewer(mode_label="Waypoint Viewer", allow_tab_switch=False, mode_index=
 
         pygame.display.flip()
 
-    pygame.quit()
+    # Only quit pygame if we created our own screen (not in single-window mode)
+    if _shared_screen is None:
+        pygame.quit()
+    if _view_state is not None:
+        _view_state['scale'] = scale
+        _view_state['pan'] = pan
     return switch_requested
 
 if __name__ == '__main__':
     run_viewer()
+

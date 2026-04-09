@@ -14,7 +14,7 @@ def run_simulation():
 
 
 def run_map():
-    result = subprocess.run([sys.executable, "unified_map_launcher.py"], cwd=MAP_DIR)
+    result = subprocess.run([sys.executable, "main.py"], cwd=MAP_DIR)
     if result.returncode != 0:
         print(f"Map tools exited with code {result.returncode}.")
 

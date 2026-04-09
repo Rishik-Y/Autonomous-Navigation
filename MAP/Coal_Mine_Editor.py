@@ -8,6 +8,8 @@ import json
 import os
 import map_storage
 import map_ui
+import session_tracker
+_saved_files = []  # Track which files were actually saved with changes
 
 # --- EDITOR SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -133,6 +135,7 @@ def save_config():
                 map_storage.simulation_path(CONFIG_FILENAME)
             ]
         )
+        _saved_files.append("mine_config.json")
         print("Config saved to Saved_Map/mine_config.json")
         return True
     except Exception as e:
@@ -304,14 +307,22 @@ def show_input_dialog(screen, font, title, current_value):
     return None
 
 # --- Main Editor Loop ---
-def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index=None, total_modes=None):
+def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index=None, total_modes=None, _shared_screen=None, _shared_font=None, _view_state=None):
     global config
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption(mode_label)
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("Consolas", 16)
-    small_font = pygame.font.SysFont("Consolas", 12)
+    # Use shared screen if provided (single-window mode), otherwise create new window
+    if _shared_screen is not None:
+        screen = _shared_screen
+        font = _shared_font
+        small_font = pygame.font.SysFont("Consolas", 12)
+        pygame.init()  # Initialize pygame even if using shared screen
+        clock = pygame.time.Clock()
+    else:
+        pygame.init()
+        screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+        pygame.display.set_caption(mode_label)
+        clock = pygame.time.Clock()
+        font = pygame.font.SysFont("Consolas", 16)
+        small_font = pygame.font.SysFont("Consolas", 12)
 
     # Load data
     load_map_data()
@@ -324,30 +335,34 @@ def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index
     is_dirty = False
     
     # --- View State ---
-    all_nodes_m = list(NODES.values()) if NODES else [np.array([0, 0])]
-    min_x_m = min(p[0] for p in all_nodes_m)
-    max_x_m = max(p[0] for p in all_nodes_m)
-    min_y_m = min(p[1] for p in all_nodes_m)
-    max_y_m = max(p[1] for p in all_nodes_m)
-    map_w_m = max(1.0, max_x_m - min_x_m)
-    map_h_m = max(1.0, max_y_m - min_y_m)
-    
-    scale = min(
-        (WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS),
-        (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS)
-    ) if map_w_m > 0 and map_h_m > 0 else 1.0
-    
-    pan = [
-        PADDING - (min_x_m * METERS_TO_PIXELS * scale),
-        PADDING - (min_y_m * METERS_TO_PIXELS * scale)
-    ]
+    if _view_state is not None:
+        scale = _view_state['scale']
+        pan = _view_state['pan']
+    else:
+        all_nodes_m = list(NODES.values()) if NODES else [np.array([0, 0])]
+        min_x_m = min(p[0] for p in all_nodes_m)
+        max_x_m = max(p[0] for p in all_nodes_m)
+        min_y_m = min(p[1] for p in all_nodes_m)
+        max_y_m = max(p[1] for p in all_nodes_m)
+        map_w_m = max(1.0, max_x_m - min_x_m)
+        map_h_m = max(1.0, max_y_m - min_y_m)
+        
+        scale = min(
+            (WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS),
+            (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS)
+        ) if map_w_m > 0 and map_h_m > 0 else 1.0
+        
+        pan = [
+            PADDING - (min_x_m * METERS_TO_PIXELS * scale),
+            PADDING - (min_y_m * METERS_TO_PIXELS * scale)
+        ]
     
     mouse_dragging = False
     last_mouse_pos = None
     hovered_mine = None
 
     running = True
-    switch_requested = None
+    switch_requested = "quit"
     while running:
         clock.tick(60)
         mouse_pos = pygame.mouse.get_pos()
@@ -355,11 +370,12 @@ def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                switch_requested = "quit"
             
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
-                    switch_requested = None
+                    switch_requested = "quit"
                     continue
                 if allow_tab_switch and event.key == pygame.K_TAB:
                     is_reverse = event.mod & pygame.KMOD_SHIFT
@@ -373,16 +389,18 @@ def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index
                             continue
                         elif choice == "quit":
                             running = False
-                            switch_requested = None
+                            switch_requested = "quit"
                             continue
                     running = False
                     switch_requested = "prev" if is_reverse else "next"
                     continue
                 # Save config
-                if event.key == pygame.K_s:
+                elif event.key == pygame.K_s:
                     if save_config():
                         is_dirty = False
                         status_text = "Configuration SAVED to Saved_Map/mine_config.json"
+                        if _saved_files:
+                            session_tracker.mark_save_occurred()
                     else:
                         status_text = "ERROR saving configuration!"
                 
@@ -484,8 +502,14 @@ def run_editor(mode_label="Coal Mine Editor", allow_tab_switch=False, mode_index
 
         pygame.display.flip()
 
-    pygame.quit()
+    # Only quit pygame if we created our own screen (not in single-window mode)
+    if _shared_screen is None:
+        pygame.quit()
+    if _view_state is not None:
+        _view_state['scale'] = scale
+        _view_state['pan'] = pan
     return switch_requested
 
 if __name__ == '__main__':
     run_editor()
+

@@ -1,9 +1,22 @@
+import io
 import pygame
 import numpy as np
 import math
 import os
 import re
 from ast import literal_eval
+from typing import NamedTuple, Tuple
+import importlib
+import map_data
+import generate_map_cache
+import map_storage
+import map_ui
+import session_tracker
+_saved_files = []  # Track which files were actually saved with changes
+
+class SaveResult(NamedTuple):
+    success: bool
+    status_text: str
 
 # --- EDITOR SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -26,14 +39,15 @@ LOAD_ZONES = []
 DUMP_ZONES = []
 FUEL_ZONES = []
 VISUAL_ROAD_CHAINS = []
-MAP_DATA_FILE = 'map_data.py'
+MAP_DATA_LEGACY_PATH = map_storage.legacy_path('map_data.py')
 
 # --- HELPER FUNCTIONS ---
 def load_map_data():
     global NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS
-    print(f"Loading data from {MAP_DATA_FILE}...")
+    map_file = map_storage.resolve_input_path('map_data.py', [MAP_DATA_LEGACY_PATH])
+    print(f"Loading data from {map_file}...")
     try:
-        with open(MAP_DATA_FILE, 'r') as f:
+        with open(map_file, 'r') as f:
             content = f.read()
         
         # Create a sandbox to exec the file in and get the variables
@@ -54,51 +68,85 @@ def load_map_data():
         NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS = {}, [], [], [], [], []
 
 def save_map_data():
-    print(f"Saving data to {MAP_DATA_FILE}...")
+    print("Saving data to Saved_Map...")
     try:
-        with open(MAP_DATA_FILE, 'w') as f:
-            f.write("import numpy as np\n\n")
-            f.write("# --- MAP DATA ---\n\n")
+        output = io.StringIO()
+        output.write("import numpy as np\n\n")
+        output.write("# --- MAP DATA ---\n\n")
 
-            # Write NODES
-            f.write("NODES = {\n")
-            for name, pos in sorted(NODES.items()):
-                f.write(f'    "{name}": np.array([{pos[0]:.1f}, {pos[1]:.1f}]),\n')
-            f.write("}\n\n")
+        # Write NODES
+        output.write("NODES = {\n")
+        for name, pos in sorted(NODES.items()):
+            output.write(f'    "{name}": np.array([{pos[0]:.1f}, {pos[1]:.1f}]),\n')
+        output.write("}\n\n")
 
-            # Write EDGES
-            f.write("EDGES = [\n")
-            for edge in sorted(EDGES):
-                f.write(f'    {edge},\n')
-            f.write("]\n\n")
+        # Write EDGES
+        output.write("EDGES = [\n")
+        for edge in sorted(EDGES):
+            output.write(f'    {edge},\n')
+        output.write("]\n\n")
 
-            # Write LOAD_ZONES
-            f.write("LOAD_ZONES = [\n")
-            for zone in sorted(LOAD_ZONES):
-                f.write(f'    "{zone}",\n')
-            f.write("]\n\n")
+        # Write LOAD_ZONES
+        output.write("LOAD_ZONES = [\n")
+        for zone in sorted(LOAD_ZONES):
+            output.write(f'    "{zone}",\n')
+        output.write("]\n\n")
 
-            # Write DUMP_ZONES
-            f.write("DUMP_ZONES = [\n")
-            for zone in sorted(DUMP_ZONES):
-                f.write(f'    "{zone}",\n')
-            f.write("]\n\n")
+        # Write DUMP_ZONES
+        output.write("DUMP_ZONES = [\n")
+        for zone in sorted(DUMP_ZONES):
+            output.write(f'    "{zone}",\n')
+        output.write("]\n\n")
 
-            # Write FUEL_ZONES
-            f.write("FUEL_ZONES = [\n")
-            for zone in sorted(FUEL_ZONES):
-                f.write(f'    "{zone}",\n')
-            f.write("]\n\n")
+        # Write FUEL_ZONES
+        output.write("FUEL_ZONES = [\n")
+        for zone in sorted(FUEL_ZONES):
+            output.write(f'    "{zone}",\n')
+        output.write("]\n\n")
 
-            # Write VISUAL_ROAD_CHAINS
-            f.write("VISUAL_ROAD_CHAINS = [\n")
-            # Do not sort a list of lists, as it's not comparable and will crash.
-            for chain in VISUAL_ROAD_CHAINS:
-                f.write(f'    {chain},\n')
-            f.write("]\n")
+        # Write VISUAL_ROAD_CHAINS
+        output.write("VISUAL_ROAD_CHAINS = [\n")
+        # Do not sort a list of lists, as it's not comparable and will crash.
+        for chain in VISUAL_ROAD_CHAINS:
+            output.write(f'    {chain},\n')
+        output.write("]\n")
+        map_storage.write_text_file(
+            "map_data.py",
+            output.getvalue(),
+            copy_targets=[MAP_DATA_LEGACY_PATH]
+        )
+        _saved_files.append("map_data.py")
         print("Save successful!")
+        return True
     except Exception as e:
         print(f"Error saving map data: {e}")
+        return False
+
+def regenerate_map_cache():
+    """Reload map data and regenerate map_cache.pkl. Returns True on success."""
+    print("Regenerating map cache...")
+    try:
+        importlib.reload(map_data)
+        generate_map_cache.main()
+        return True
+    except Exception as e:
+        print(f"Error regenerating map cache: {e}")
+        return False
+
+def handle_save_request() -> SaveResult:
+    """Attempt to save map data and return a SaveResult with status text."""
+    if save_map_data():
+        return SaveResult(True, "SAVED to Saved_Map/map_data.py")
+    return SaveResult(False, "ERROR saving map data")
+
+def apply_save_result(save_result: SaveResult, current_is_dirty: bool, current_cache_needs_regen: bool) -> Tuple[bool, bool]:
+    """Return (is_dirty, cache_needs_regen) after applying save_result.
+
+    Saves clear the dirty flag and mark cache regeneration as needed; failures preserve existing state.
+    """
+    updated_is_dirty = False if save_result.success else current_is_dirty
+    updated_cache_needs_regen = current_cache_needs_regen or save_result.success
+    return updated_is_dirty, updated_cache_needs_regen
 
 # --- Drawing & Coordinate Functions ---
 PRE_CALCULATED_SPLINES = []
@@ -300,13 +348,20 @@ def fix_intersections():
     return len(intersections_found)
 
     # --- Main Editor Loop ---
-def run_editor():
+def run_editor(mode_label="Map Editor", allow_tab_switch=False, mode_index=None, total_modes=None, _shared_screen=None, _shared_font=None, _view_state=None):
     global NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Map Editor")
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("Consolas", 16)
+    # Use shared screen if provided (single-window mode), otherwise create new window
+    if _shared_screen is not None:
+        screen = _shared_screen
+        font = _shared_font
+        pygame.init()  # Initialize pygame even if using shared screen
+        clock = pygame.time.Clock()
+    else:
+        pygame.init()
+        screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+        pygame.display.set_caption(mode_label)
+        clock = pygame.time.Clock()
+        font = pygame.font.SysFont("Consolas", 16)
 
     load_map_data()
     rebuild_splines() # Initial spline generation
@@ -315,33 +370,69 @@ def run_editor():
     mode = 'add_purple'
     brush_color = PURPLE
     status_text = "Mode: ADD PURPLE"
+    is_dirty = False
+    cache_needs_regen = False
     selection_start_node = None
     is_drawing_manual = False
     manual_path_px = []
     
     # --- View State ---
-    all_nodes_m = list(NODES.values()) if NODES else [np.array([0,0])]
-    min_x_m, max_x_m = min(p[0] for p in all_nodes_m), max(p[0] for p in all_nodes_m)
-    min_y_m, max_y_m = min(p[1] for p in all_nodes_m), max(p[1] for p in all_nodes_m)
-    map_w_m, map_h_m = max(1.0, max_x_m - min_x_m), max(1.0, max_y_m - min_y_m)
-    scale = min((WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS), (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS)) if map_w_m > 0 and map_h_m > 0 else 1.0
-    pan = [PADDING - (min_x_m * METERS_TO_PIXELS * scale), PADDING - (min_y_m * METERS_TO_PIXELS * scale)]
+    if _view_state is not None:
+        scale = _view_state['scale']
+        pan = _view_state['pan']
+    else:
+        all_nodes_m = list(NODES.values()) if NODES else [np.array([0,0])]
+        min_x_m, max_x_m = min(p[0] for p in all_nodes_m), max(p[0] for p in all_nodes_m)
+        min_y_m, max_y_m = min(p[1] for p in all_nodes_m), max(p[1] for p in all_nodes_m)
+        map_w_m, map_h_m = max(1.0, max_x_m - min_x_m), max(1.0, max_y_m - min_y_m)
+        scale = min((WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS), (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS)) if map_w_m > 0 and map_h_m > 0 else 1.0
+        pan = [PADDING - (min_x_m * METERS_TO_PIXELS * scale), PADDING - (min_y_m * METERS_TO_PIXELS * scale)]
     mouse_dragging, last_mouse_pos = False, None
 
     running = True
+    switch_requested = "quit"
     while running:
         dt = clock.tick(60) / 1000.0
         mouse_pos = pygame.mouse.get_pos()
         needs_rebuild = False
 
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: running = False
+            if event.type == pygame.QUIT: 
+                running = False
+                switch_requested = "quit"
             
             # --- Keyboard Input for Mode Change ---
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_s:
-                    save_map_data()
-                    status_text = "SAVED to map_data.py"
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                    switch_requested = "quit"
+                    continue
+                if allow_tab_switch and event.key == pygame.K_TAB:
+                    is_reverse = event.mod & pygame.KMOD_SHIFT
+                    if is_dirty:
+                        choice = map_ui.confirm_save_dialog(screen, font, mode_label)
+                        if choice == "save":
+                            save_result = handle_save_request()
+                            is_dirty, cache_needs_regen = apply_save_result(save_result, is_dirty, cache_needs_regen)
+                            status_text = save_result.status_text
+                            if not save_result.success:
+                                status_text = "Save failed - mode switch canceled."
+                                continue
+                        elif choice == "cancel":
+                            continue
+                        elif choice == "quit":
+                            running = False
+                            switch_requested = "quit"
+                            continue
+                    running = False
+                    switch_requested = "prev" if is_reverse else "next"
+                    continue
+                elif event.key == pygame.K_s:
+                    save_result = handle_save_request()
+                    is_dirty, cache_needs_regen = apply_save_result(save_result, is_dirty, cache_needs_regen)
+                    status_text = save_result.status_text
+                    if save_result.success and _saved_files:
+                        session_tracker.mark_save_occurred()
                 elif event.key == pygame.K_g:
                     mode, brush_color, status_text = 'add_green', GREEN, "Mode: ADD GREEN (Load Zone)"
                     selection_start_node = None
@@ -370,6 +461,7 @@ def run_editor():
                     num_fixed = fix_intersections()
                     if num_fixed > 0:
                         status_text = f"Fixed {num_fixed} intersections. SAVE your changes."
+                        is_dirty = True
                         needs_rebuild = True
                     else:
                         status_text = "No intersections needed fixing."
@@ -398,6 +490,7 @@ def run_editor():
                             elif mode == 'add_red': DUMP_ZONES.append(new_name)
                             elif mode == 'add_orange': FUEL_ZONES.append(new_name)
                             status_text = f"Added node: {new_name}"
+                            is_dirty = True
                             needs_rebuild = True
 
                     elif mode == 'delete':
@@ -425,6 +518,7 @@ def run_editor():
                             VISUAL_ROAD_CHAINS = new_visual_chains
 
                             status_text = f"Deleted node: {clicked_node}"
+                            is_dirty = True
                             needs_rebuild = True
                     elif mode == 'connect_start':
                         if clicked_node:
@@ -439,6 +533,7 @@ def run_editor():
                                 EDGES.append(new_edge)
                                 VISUAL_ROAD_CHAINS.append(list(new_edge))
                                 status_text = f"Connected {selection_start_node} to {clicked_node}"
+                                is_dirty = True
                                 needs_rebuild = True
                             else:
                                 status_text = "Edge already exists."
@@ -503,6 +598,7 @@ def run_editor():
                                         VISUAL_ROAD_CHAINS.remove(chain_to_remove_2)
 
                                 status_text = f"Disconnected {selection_start_node} from {clicked_node}"
+                                is_dirty = True
                                 needs_rebuild = True
                             else:
                                 status_text = "No direct edge exists to disconnect."
@@ -582,6 +678,7 @@ def run_editor():
                                     if new_edge not in EDGES:
                                         EDGES.append(new_edge)
                                 status_text = f"Created manual road with {len(deduped_chain)} nodes."
+                                is_dirty = True
                                 needs_rebuild = True
                             else:
                                 status_text = "Manual road too short after processing."
@@ -631,7 +728,9 @@ def run_editor():
 
 
         # --- HUD ---
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
+            f"{mode_label}{tab_hint}",
             "CONTROLS: [G]reen | [R]ed | [O]range | [P]urple | [W]hite | [C]onnect | [D]isconnect | [M]anual | [F]ix | [S]ave",
             "PAN/ZOOM: Right-Click+Drag / Mouse Wheel",
             status_text
@@ -639,10 +738,20 @@ def run_editor():
         for i, text in enumerate(hud_texts):
             text_surface = font.render(text, True, BLACK)
             screen.blit(text_surface, (10, 10 + i * 20))
+        map_ui.draw_mode_overlay(screen, font, mode_label, mode_index, total_modes, is_dirty)
 
         pygame.display.flip()
 
-    pygame.quit()
+    # Only quit pygame if we created our own screen (not in single-window mode)
+    if _shared_screen is None:
+        pygame.quit()
+    if cache_needs_regen:
+        regenerate_map_cache()
+    if _view_state is not None:
+        _view_state['scale'] = scale
+        _view_state['pan'] = pan
+    return switch_requested
 
 if __name__ == '__main__':
     run_editor()
+

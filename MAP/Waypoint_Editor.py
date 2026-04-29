@@ -2,6 +2,10 @@ import pygame
 import numpy as np
 import map_data
 import pickle
+import map_storage
+import map_ui
+import session_tracker
+_saved_files = []  # Track which files were actually saved with changes
 
 # --- SETTINGS ---
 WIDTH, HEIGHT = 1200, 900
@@ -65,10 +69,19 @@ def generate_all_waypoints():
 def save_waypoints_data(waypoints_data):
     """Saves the generated waypoint data to a pickle file."""
     filepath = 'waypoints.pkl'
-    print(f"Saving {len(waypoints_data)} waypoint chains to {filepath}...")
-    with open(filepath, 'wb') as f:
-        pickle.dump(waypoints_data, f)
+    print(f"Saving {len(waypoints_data)} waypoint chains to Saved_Map/{filepath}...")
+    data = pickle.dumps(waypoints_data)
+    map_storage.write_binary_file(
+        filepath,
+        data,
+        copy_targets=[
+            map_storage.legacy_path(filepath),
+            map_storage.simulation_path(filepath)
+        ]
+    )
+    _saved_files.append("waypoints.pkl")
     print("Save successful!")
+    return True
 
 # --- DRAWING & COORDINATE FUNCTIONS ---
 def grid_to_screen(pos_m, scale, pan):
@@ -101,51 +114,99 @@ def draw_waypoints(screen, g_to_s, scale, waypoints_map):
             pygame.draw.circle(screen, WAYPOINT_COLOR, g_to_s(point_m), max(1, int(scale * 1.5)))
 
 # --- MAIN EDITOR LOOP ---
-def run_waypoint_editor():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-    pygame.display.set_caption("Waypoint Editor")
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("Consolas", 16)
+def run_waypoint_editor(mode_label="Waypoint Editor", allow_tab_switch=False, mode_index=None, total_modes=None, _shared_screen=None, _shared_font=None, _view_state=None):
+    # Use shared screen if provided (single-window mode), otherwise create new window
+    if _shared_screen is not None:
+        screen = _shared_screen
+        font = _shared_font
+        pygame.init()  # Initialize pygame even if using shared screen
+        clock = pygame.time.Clock()
+    else:
+        pygame.init()
+        screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+        pygame.display.set_caption(mode_label)
+        clock = pygame.time.Clock()
+        font = pygame.font.SysFont("Consolas", 16)
 
     # Generate background visuals from the same function to ensure they match
     background_splines_map = generate_all_waypoints()
     
     generated_waypoints_map = {}
     status_text = "Press [A] to Generate, [S] to Save, [L] to Load existing"
+    is_dirty = False
 
     # --- View State ---
-    all_nodes_m = list(map_data.NODES.values()) if map_data.NODES else [np.array([0,0])]
-    min_x_m, max_x_m = min(p[0] for p in all_nodes_m), max(p[0] for p in all_nodes_m)
-    min_y_m, max_y_m = min(p[1] for p in all_nodes_m), max(p[1] for p in all_nodes_m)
-    map_w_m, map_h_m = max(1.0, max_x_m - min_x_m), max(1.0, max_y_m - min_y_m)
-    scale = min((WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS), (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS))
-    pan = [PADDING - (min_x_m * METERS_TO_PIXELS * scale), PADDING - (min_y_m * METERS_TO_PIXELS * scale)]
+    if _view_state is not None:
+        scale = _view_state['scale']
+        pan = _view_state['pan']
+    else:
+        all_nodes_m = list(map_data.NODES.values()) if map_data.NODES else [np.array([0,0])]
+        min_x_m, max_x_m = min(p[0] for p in all_nodes_m), max(p[0] for p in all_nodes_m)
+        min_y_m, max_y_m = min(p[1] for p in all_nodes_m), max(p[1] for p in all_nodes_m)
+        map_w_m, map_h_m = max(1.0, max_x_m - min_x_m), max(1.0, max_y_m - min_y_m)
+        scale = min((WIDTH - PADDING * 2) / (map_w_m * METERS_TO_PIXELS), (HEIGHT - PADDING * 2) / (map_h_m * METERS_TO_PIXELS))
+        pan = [PADDING - (min_x_m * METERS_TO_PIXELS * scale), PADDING - (min_y_m * METERS_TO_PIXELS * scale)]
     mouse_dragging, last_mouse_pos = False, None
 
     running = True
+    switch_requested = "quit"
     while running:
         dt = clock.tick(60) / 1000.0
         mouse_pos = pygame.mouse.get_pos()
 
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: running = False
+            if event.type == pygame.QUIT: 
+                running = False
+                switch_requested = "quit"
             
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                    switch_requested = "quit"
+                    continue
+                if allow_tab_switch and event.key == pygame.K_TAB:
+                    is_reverse = event.mod & pygame.KMOD_SHIFT
+                    if is_dirty:
+                        choice = map_ui.confirm_save_dialog(screen, font, mode_label)
+                        if choice == "save":
+                            if generated_waypoints_map and save_waypoints_data(generated_waypoints_map):
+                                is_dirty = False
+                                status_text = "Saved waypoints to Saved_Map/waypoints.pkl"
+                        elif choice == "cancel":
+                            continue
+                        elif choice == "quit":
+                            running = False
+                            switch_requested = "quit"
+                            continue
+                    running = False
+                    switch_requested = "prev" if is_reverse else "next"
+                    continue
                 if event.key == pygame.K_a:
                     generated_waypoints_map = generate_all_waypoints()
                     status_text = f"Generated waypoints for {len(generated_waypoints_map)} chains. Press [S] to save."
+                    is_dirty = True
                 elif event.key == pygame.K_s:
                     if generated_waypoints_map:
-                        save_waypoints_data(generated_waypoints_map)
-                        status_text = f"Saved waypoints to waypoints.pkl"
+                        if save_waypoints_data(generated_waypoints_map):
+                            is_dirty = False
+                            status_text = "Saved waypoints to Saved_Map/waypoints.pkl"
+                            if _saved_files:
+                                session_tracker.mark_save_occurred()
                     else:
                         status_text = "No waypoints generated. Press [A] first."
                 elif event.key == pygame.K_l:
                     try:
-                        with open('waypoints.pkl', 'rb') as f:
+                        path = map_storage.resolve_input_path(
+                            'waypoints.pkl',
+                            [
+                                map_storage.legacy_path('waypoints.pkl'),
+                                map_storage.simulation_path('waypoints.pkl')
+                            ]
+                        )
+                        with open(path, 'rb') as f:
                             generated_waypoints_map = pickle.load(f)
-                        status_text = f"Loaded {len(generated_waypoints_map)} waypoint chains from waypoints.pkl"
+                        is_dirty = False
+                        status_text = f"Loaded {len(generated_waypoints_map)} waypoint chains from {path}"
                     except FileNotFoundError:
                         status_text = "waypoints.pkl not found."
             
@@ -183,8 +244,9 @@ def run_waypoint_editor():
             draw_waypoints(screen, g_to_s, scale, generated_waypoints_map)
 
         # --- HUD ---
+        tab_hint = " | TAB: Switch Mode" if allow_tab_switch else ""
         hud_texts = [
-            "Waypoint Editor",
+            f"{mode_label}{tab_hint}",
             "CONTROLS: [A] Generate All | [S] Save All | [L] Load from file",
             "PAN/ZOOM: Right-Click+Drag / Mouse Wheel",
             status_text
@@ -192,10 +254,18 @@ def run_waypoint_editor():
         for i, text in enumerate(hud_texts):
             text_surface = font.render(text, True, BLACK)
             screen.blit(text_surface, (10, 10 + i * 20))
+        map_ui.draw_mode_overlay(screen, font, mode_label, mode_index, total_modes, is_dirty)
 
         pygame.display.flip()
 
-    pygame.quit()
+    # Only quit pygame if we created our own screen (not in single-window mode)
+    if _shared_screen is None:
+        pygame.quit()
+    if _view_state is not None:
+        _view_state['scale'] = scale
+        _view_state['pan'] = pan
+    return switch_requested
 
 if __name__ == '__main__':
     run_waypoint_editor()
+

@@ -1,6 +1,6 @@
 import pygame
 import numpy as np
-import map_loader as map_data
+from Map import map_loader as map_data
 from config import *
 
 def grid_to_screen(pos_m, scale, pan):

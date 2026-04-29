@@ -7,31 +7,46 @@ import os
 import json
 
 # --- Module Imports ---
-import map_loader as map_data
+from Map import map_loader as map_data
 from config import *
-from utils import Path, KalmanFilter, a_star_pathfinding
+from utils import Path, KalmanFilter
 from car import Car
 from dispatcher import Dispatcher
 from graphics import grid_to_screen, screen_to_grid, draw_road_network, draw_active_path
 from tooltip_overlay import get_hovered_entity, draw_tooltip
+from Algorithm.planner_registry import load_local_planner, DEFAULT_GLOBAL_PLANNER, DEFAULT_LOCAL_PLANNER
 
-def load_mine_config():
-    """Load configuration from mine_config.json, fallback to defaults."""
-    config = {
-        "truck_count": 5,
-        "coal_capacities": {}
-    }
-    
-    config_file = "mine_config.json"
+
+def _load_json_file(config_file, label):
     if os.path.exists(config_file):
         try:
-            with open(config_file, 'r') as f:
-                loaded = json.load(f)
-                config["truck_count"] = loaded.get("truck_count", 5)
-                config["coal_capacities"] = loaded.get("coal_capacities", {})
-                print(f"Loaded mine config: {config['truck_count']} trucks, {len(config['coal_capacities'])} mines configured.")
+            with open(config_file, "r") as f:
+                return json.load(f)
         except Exception as e:
-            print(f"Error loading mine config: {e}, using defaults.")
+            print(f"Error loading {label}: {e}")
+    return None
+
+def load_mine_config():
+    """Load configuration from Map/mine_config.json, fallback to defaults."""
+    default_config = {
+        "truck_count": 8,
+        "coal_capacities": [5.0] * 8
+    }
+
+    config = {
+        "truck_count": 5,
+        "coal_capacities": {},
+    }
+    
+    config_file = "Map/mine_config.json"
+    loaded = _load_json_file(config_file, "mine config")
+    if loaded is not None:
+        config["truck_count"] = loaded.get("truck_count", 5)
+        config["coal_capacities"] = loaded.get("coal_capacities", {})
+        print(
+            f"Loaded mine config: {config['truck_count']} trucks, "
+            f"{len(config['coal_capacities'])} mines configured."
+        )
     else:
         # Fallback to truck.txt for backwards compatibility
         if os.path.exists("truck.txt"):
@@ -40,8 +55,45 @@ def load_mine_config():
                     config["truck_count"] = int(f.read().strip())
             except ValueError:
                 pass
-        print(f"No mine_config.json found, using defaults with {config['truck_count']} trucks.")
+        print(
+            f"No Map/mine_config.json found, using defaults with {config['truck_count']} trucks."
+        )
     
+    return config
+
+
+def load_algorithm_config():
+    """Load planner selection from algorithm_config.json, with legacy fallback."""
+    config = {
+        "global_planner": DEFAULT_GLOBAL_PLANNER,
+        "local_planner": DEFAULT_LOCAL_PLANNER,
+    }
+    config_file = "algorithm_config.json"
+    loaded = _load_json_file(config_file, "algorithm config")
+    if loaded is not None:
+        config["global_planner"] = loaded.get("global_planner", DEFAULT_GLOBAL_PLANNER)
+        config["local_planner"] = loaded.get("local_planner", DEFAULT_LOCAL_PLANNER)
+        print(
+            f"Loaded algorithm config: global='{config['global_planner']}', "
+            f"local='{config['local_planner']}'."
+        )
+    # 2) Fallback to legacy mine_config.json for simulation parameters
+    legacy = _load_json_file("Map/mine_config.json", "mine config")
+    if legacy:
+        legacy_global = legacy.get("global_planner")
+        legacy_local = legacy.get("local_planner")
+        if legacy_global or legacy_local:
+            config["global_planner"] = legacy.get("global_planner", DEFAULT_GLOBAL_PLANNER)
+            config["local_planner"] = legacy.get("local_planner", DEFAULT_LOCAL_PLANNER)
+            print("WARNING: 'truck_count' found in 'algorithm_config.json' and 'Map/mine_config.json'.")
+            print("         Prioritizing 'algorithm_config.json'. If these are algorithm settings, remove them from")
+            print("         Map/mine_config.json. Move them to algorithm_config.json to keep files separated.")
+            return config
+
+    print(
+        f"No algorithm_config.json found, using defaults "
+        f"global='{config['global_planner']}', local='{config['local_planner']}'."
+    )
     return config
 
 def get_path_from_nodes(route_node_names, waypoints_map):
@@ -90,13 +142,31 @@ def run_simulation():
 
     # --- Load Mine Configuration ---
     mine_config = load_mine_config()
+    algorithm_config = load_algorithm_config()
     truck_count = mine_config["truck_count"]
     coal_capacities = mine_config["coal_capacities"]
+    global_planner_name = algorithm_config["global_planner"]
+    local_planner_name = algorithm_config["local_planner"]
+    try:
+        local_planner = load_local_planner(local_planner_name)
+    except Exception as e:
+        print(
+            f"Local planner '{local_planner_name}' failed to init ({type(e).__name__}: {e}). "
+            "Falling back to default."
+        )
+        try:
+            local_planner = load_local_planner(DEFAULT_LOCAL_PLANNER)
+        except Exception as fallback_error:
+            raise RuntimeError(
+                f"Default local planner '{DEFAULT_LOCAL_PLANNER}' failed to init ({fallback_error})."
+            ) from fallback_error
     print(f"Starting simulation with {truck_count} trucks.")
 
-    # --- Load Pre-computed Data ---
-    waypoints_filepath = 'waypoints.pkl'
-    cache_filename = 'map_cache.pkl'
+    # ---------------------------------------------------------
+    # 2. LOAD PRE-CALCULATED DATA
+    # ---------------------------------------------------------
+    waypoints_filepath = 'Map/waypoints.pkl'
+    cache_filename = 'Map/map_cache.pkl'
     
     if not os.path.exists(cache_filename):
          print(f"Warning: Local '{cache_filename}' not found. Pathfinding might fail if graph is missing.")
@@ -165,7 +235,11 @@ def run_simulation():
         trace_back_and_patch(zone, set())
 
     # --- Initialize Components ---
-    dispatcher = Dispatcher(road_graph, coal_capacities=coal_capacities)
+    dispatcher = Dispatcher(
+        road_graph,
+        coal_capacities=coal_capacities,
+        global_planner_name=global_planner_name,
+    )
     cars = []
     kfs = []
 
@@ -196,7 +270,12 @@ def run_simulation():
         target_node = dispatcher.assign_task(car)
         car.target_node_name = target_node
         
-        route = a_star_pathfinding(road_graph, car.current_node_name, target_node, cache=route_cache)
+        route = local_planner.compute_route(
+            road_graph,
+            car.current_node_name,
+            target_node,
+            cache=route_cache,
+        )
         if not route: continue
         
         wp = get_path_from_nodes(route, waypoints_map)
@@ -223,6 +302,8 @@ def run_simulation():
     pan = [PADDING - (min_x_m * METERS_TO_PIXELS * scale), PADDING - (min_y_m * METERS_TO_PIXELS * scale)]
     mouse_dragging, last_mouse_pos = False, None
     selected_car_idx = 0
+    paused = False
+    sim_speed = 1.0
 
     # --- Initial MPC run for all trucks ---
     for car in cars:
@@ -241,17 +322,36 @@ def run_simulation():
     # --- Main Loop ---
     running = True
     while running:
-        dt = clock.tick(60) / 1000.0 # Physics runs at ~60Hz
-        if dt == 0: continue
-        
-        mpc_timer += dt
-        traffic_update_timer += dt
-        global_opt_timer += dt
+        frame_dt = clock.tick(60) / 1000.0 # Physics runs at ~60Hz
+        if frame_dt == 0: continue
+
+        sim_dt = 0.0 if paused else frame_dt * sim_speed
+        if sim_dt > 0:
+            mpc_timer += sim_dt
+            traffic_update_timer += sim_dt
+            global_opt_timer += sim_dt
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT: running = False
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_TAB:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key in (pygame.K_SPACE, pygame.K_p):
+                    paused = not paused
+                elif event.mod & pygame.KMOD_SHIFT:
+                    if event.key == pygame.K_1:
+                        sim_speed = 1.0
+                    elif event.key == pygame.K_2:
+                        sim_speed = 2.0
+                    elif event.key == pygame.K_3:
+                        sim_speed = 3.0
+                    elif event.key == pygame.K_4:
+                        sim_speed = 4.0
+                    elif event.key == pygame.K_5:
+                        sim_speed = 5.0
+                    elif event.key == pygame.K_0:
+                        sim_speed = 0.5
+                elif event.key == pygame.K_TAB:
                     selected_car_idx = (selected_car_idx + 1) % len(cars)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 3: mouse_dragging, last_mouse_pos = True, event.pos
@@ -271,101 +371,108 @@ def run_simulation():
         
         draw_road_network(screen, g_to_s, scale, waypoints_map)
 
-        # --- Traffic Update (1Hz) ---
-        if traffic_update_timer >= TRAFFIC_UPDATE_INTERVAL:
-            traffic_update_timer = 0.0
-            dispatcher.update_traffic_weights(cars)
+        if sim_dt > 0:
+            # --- Traffic Update (1Hz) ---
+            if traffic_update_timer >= TRAFFIC_UPDATE_INTERVAL:
+                traffic_update_timer = 0.0
+                dispatcher.update_traffic_weights(cars)
 
-        # --- Global Optimization Update (0.2Hz) ---
-        if global_opt_timer >= GLOBAL_OPT_INTERVAL:
-            global_opt_timer = 0.0
-            dispatcher.update_global_plan(cars)
+            # --- Global Optimization Update (0.2Hz) ---
+            if global_opt_timer >= GLOBAL_OPT_INTERVAL:
+                global_opt_timer = 0.0
+                dispatcher.update_global_plan(cars)
 
-        # --- MPC Update Step (10Hz) ---
-        if mpc_timer >= MPC_INTERVAL:
-            mpc_timer = 0.0 
-            
-            # Gather all PLANNED trajectories (Sync Step)
-            all_trajectories = [c.planned_trajectory for c in cars]
-
-            for i, car in enumerate(cars):
-                # Skip MPC during K-turn maneuver
-                if car.op_state == "TURNING_AROUND":
-                    continue
-                # Cooperative Collision Avoidance: Share trajectories
-                other_trajectories = [all_trajectories[j] for j in range(len(cars)) if j != i]
-                car.run_mpc(other_trajectories, other_cars=cars)
-
-        # --- Physics Update Step (60Hz) ---
-        for idx, car in enumerate(cars):
-            kf = kfs[idx]
-            est_pos_m = np.array([kf.x[0], kf.x[2]])
-            est_vel_m = np.array([kf.x[1], kf.x[3]])
-
-            # Project position to path (skip during K-turn)
-            if car.path and car.op_state != "TURNING_AROUND":
-                car.s_path_m = car.path.project(est_pos_m, car.s_path_m)
-
-            # High-level Logic (State Machine)
-            # Pass dispatcher to handle reservations
-            direction, base_speed_ms = car.update_op_state(dt, dispatcher)
-            car.desired_speed_ms = base_speed_ms 
-
-            if car.needs_new_path:
-                car.needs_new_path = False
-                car.current_node_name = car.target_node_name
-                new_target = dispatcher.assign_task(car)
-                car.target_node_name = new_target
+            # --- MPC Update Step (10Hz) ---
+            if mpc_timer >= MPC_INTERVAL:
+                mpc_timer = 0.0 
                 
-                print(f"Car {car.id}: Routing {car.current_node_name} -> {new_target}")
-                
-                # USE DISPATCHER'S WEIGHTED GRAPH AND ROUTE CACHE
-                route_node_names = a_star_pathfinding(dispatcher.get_graph(), car.current_node_name, new_target, cache=route_cache)
-                
-                if route_node_names:
-                    waypoints_m = get_path_from_nodes(route_node_names, waypoints_map)
-                    if waypoints_m and len(waypoints_m) >= 2:
-                        car.path = Path(waypoints_m)
-                        car.s_path_m = 0.0
-                        
-                        # --- K-TURN SETUP: Calculate target heading for maneuver ---
-                        car.turn_target_angle = math.atan2(
-                            waypoints_m[1][1] - waypoints_m[0][1],
-                            waypoints_m[1][0] - waypoints_m[0][0]
-                        )
-                        car.current_mpc_control = np.zeros(2)
-                        car.mpc.prev_u = np.zeros_like(car.mpc.prev_u)
-                        
-                        print(f"Car {car.id}: K-turn to heading {math.degrees(car.turn_target_angle):.1f}°")
+                # Gather all PLANNED trajectories (Sync Step)
+                all_trajectories = [c.planned_trajectory for c in cars]
+
+                for i, car in enumerate(cars):
+                    # Skip MPC during K-turn maneuver
+                    if car.op_state == "TURNING_AROUND":
+                        continue
+                    # Cooperative Collision Avoidance: Share trajectories
+                    other_trajectories = [all_trajectories[j] for j in range(len(cars)) if j != i]
+                    car.run_mpc(other_trajectories, other_cars=cars)
+
+            # --- Physics Update Step (60Hz) ---
+            for idx, car in enumerate(cars):
+                kf = kfs[idx]
+                est_pos_m = np.array([kf.x[0], kf.x[2]])
+                est_vel_m = np.array([kf.x[1], kf.x[3]])
+
+                # Project position to path (skip during K-turn)
+                if car.path and car.op_state != "TURNING_AROUND":
+                    car.s_path_m = car.path.project(est_pos_m, car.s_path_m)
+
+                # High-level Logic (State Machine)
+                # Pass dispatcher to handle reservations
+                direction, base_speed_ms = car.update_op_state(sim_dt, dispatcher)
+                car.desired_speed_ms = base_speed_ms 
+
+                if car.needs_new_path:
+                    car.needs_new_path = False
+                    car.current_node_name = car.target_node_name
+                    new_target = dispatcher.assign_task(car)
+                    car.target_node_name = new_target
+                    
+                    print(f"Car {car.id}: Routing {car.current_node_name} -> {new_target}")
+                    
+                    # USE DISPATCHER'S WEIGHTED GRAPH AND ROUTE CACHE
+                    route_node_names = local_planner.compute_route(
+                        dispatcher.get_graph(),
+                        car.current_node_name,
+                        new_target,
+                        cache=route_cache,
+                    )
+                    
+                    if route_node_names:
+                        waypoints_m = get_path_from_nodes(route_node_names, waypoints_map)
+                        if waypoints_m and len(waypoints_m) >= 2:
+                            car.path = Path(waypoints_m)
+                            car.s_path_m = 0.0
+                            
+                            # --- K-TURN SETUP: Calculate target heading for maneuver ---
+                            car.turn_target_angle = math.atan2(
+                                waypoints_m[1][1] - waypoints_m[0][1],
+                                waypoints_m[1][0] - waypoints_m[0][0]
+                            )
+                            car.current_mpc_control = np.zeros(2)
+                            car.mpc.prev_u = np.zeros_like(car.mpc.prev_u)
+                            
+                            print(f"Car {car.id}: K-turn to heading {math.degrees(car.turn_target_angle):.1f}°")
+                        else:
+                            print(f"Car {car.id}: Path too short!")
                     else:
-                        print(f"Car {car.id}: Path too short!")
+                        print(f"Car {car.id}: No route found!")
+
+                # --- Physics / Maneuver ---
+                if car.op_state == "TURNING_AROUND":
+                    # Execute K-turn maneuver (replaces normal move)
+                    turn_done = car.execute_turn_step(sim_dt)
+                    if turn_done:
+                        # Turn complete - re-sync path projection and Kalman filter
+                        if car.path:
+                            car.s_path_m = car.path.project(np.array([car.x_m, car.y_m]), 0.0)
+                        kf.x[0] = car.x_m
+                        kf.x[1] = 0.0
+                        kf.x[2] = car.y_m
+                        kf.x[3] = 0.0
+                        car.run_mpc([], other_cars=cars)
+                        print(f"Car {car.id}: K-turn complete, now {car.op_state}")
                 else:
-                    print(f"Car {car.id}: No route found!")
+                    # Normal MPC-controlled movement
+                    car.move(sim_dt)
 
-            # --- Physics / Maneuver ---
-            if car.op_state == "TURNING_AROUND":
-                # Execute K-turn maneuver (replaces normal move)
-                turn_done = car.execute_turn_step(dt)
-                if turn_done:
-                    # Turn complete - re-sync path projection and Kalman filter
-                    if car.path:
-                        car.s_path_m = car.path.project(np.array([car.x_m, car.y_m]), 0.0)
-                    kf.x[0] = car.x_m
-                    kf.x[1] = 0.0
-                    kf.x[2] = car.y_m
-                    kf.x[3] = 0.0
-                    car.run_mpc([], other_cars=cars)
-                    print(f"Car {car.id}: K-turn complete, now {car.op_state}")
-            else:
-                # Normal MPC-controlled movement
-                car.move(dt)
+                # Kalman Filter
+                accel_vec_m = np.array([car.accel_ms2 * math.cos(car.angle), car.accel_ms2 * math.sin(car.angle)])
+                kf.predict(u=accel_vec_m)
+                kf.update(z=car.get_noisy_measurement())
 
-            # Kalman Filter
-            accel_vec_m = np.array([car.accel_ms2 * math.cos(car.angle), car.accel_ms2 * math.sin(car.angle)])
-            kf.predict(u=accel_vec_m)
-            kf.update(z=car.get_noisy_measurement())
-
-            # Draw
+        # Draw ALL trucks (must be outside `if sim_dt > 0` so trucks render when paused)
+        for idx, car in enumerate(cars):
             if car.path and idx == selected_car_idx:
                  draw_active_path(screen, car.path, g_to_s, scale)
             car.draw(screen, g_to_s, is_selected=(idx == selected_car_idx))
@@ -379,7 +486,9 @@ def run_simulation():
                 f"Mass: {sel_car.current_mass_kg:.0f} kg",
                 f"State: {sel_car.op_state}",
                 f"Dispatcher: Advanced (Swarm Plan)",
-                f"Active Trucks: {len(cars)}"
+                f"Active Trucks: {len(cars)}",
+                f"Sim Speed: {sim_speed}x | {'Paused' if paused else 'Running'}",
+                "Controls: TAB switch | SPACE play/pause | SHIFT+0 (0.5x) | SHIFT+1-5 (1-5x) | ESC back"
             ]
             for i, text in enumerate(hud_texts):
                 screen.blit(font.render(text, True, (0, 0, 0)), (10, 10 + i * 22))

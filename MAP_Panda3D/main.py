@@ -3,7 +3,7 @@
 import sys
 
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import loadPrcFileData
+from panda3d.core import Point3, loadPrcFileData
 
 import map_storage
 import session_tracker
@@ -11,6 +11,7 @@ from coal_mine_editor import CoalMineEditorMode
 from map_editor import MapEditorMode
 from map_ui import ModeOverlay, SavePrompt, StatusHud
 from map_viewer import MapViewerMode
+from panda_elevation import Heightmap, TerrainMesh
 from panda_common import CameraController, Picker, SceneRenderer
 from waypoint_editor import WaypointEditorMode
 from waypoint_viewer import WaypointViewerMode
@@ -28,9 +29,16 @@ class UnifiedPandaMapLauncher(ShowBase):
         self.files_saved = []
         self.pending_switch = None
 
-        self.camera_controller = CameraController(self)
-        self.picker = Picker(self)
-        self.renderer = SceneRenderer(self)
+        self.heightmap = Heightmap()
+        self.heightmap.load_json()
+        self.terrain = TerrainMesh(self.heightmap)
+        self.renderer = SceneRenderer(self, self.heightmap, self.terrain)
+
+        cx = self.heightmap.origin_x + self.heightmap.cols * self.heightmap.cell_size * 0.5
+        cy = self.heightmap.origin_y + self.heightmap.rows * self.heightmap.cell_size * 0.5
+        cz = self.heightmap.get_height_at_world(cx, cy)
+        self.camera_controller = CameraController(self, center=Point3(cx, cy, cz), dist=1400)
+        self.picker = Picker(self, heightmap=self.heightmap, terrain_np_getter=self.renderer.get_terrain_np)
 
         self.mode_overlay = ModeOverlay(self)
         self.status_hud = StatusHud(self)

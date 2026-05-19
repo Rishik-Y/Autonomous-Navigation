@@ -15,26 +15,30 @@ from panda3d.core import (
     Geom,
     GeomNode,
     GeomPoints,
-    GeomTriangles,
     GeomVertexData,
     GeomVertexFormat,
     GeomVertexWriter,
+    DirectionalLight,
+    AmbientLight,
+    LColor,
     LineSegs,
-    NodePath,
-    Plane,
     Point2,
     Point3,
     TextNode,
-    Vec3,
 )
+
+from panda_elevation import Heightmap, TerrainMesh
 
 METERS_TO_PIXELS = 6.0
 POINTS_PER_SEGMENT = 20
 ROAD_WIDTH_M = 8.0
 
+GRID_Z_OFFSET = -0.2
+ROAD_Z_OFFSET = 0.7
+NODE_Z_OFFSET = 0.6
+
 
 def catmull_rom_point(t, p0, p1, p2, p3):
-    # Standard uniform Catmull-Rom cubic interpolation between control points.
     return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * (t ** 2) + (-p0 + 3 * p1 - 3 * p2 + p3) * (t ** 3))
 
 
@@ -58,11 +62,17 @@ def generate_curvy_path_from_nodes(node_list, points_per_segment=POINTS_PER_SEGM
 
 @dataclass
 class PickResult:
-    world_xy: np.ndarray | None
+    world_xyz: np.ndarray | None
+
+    @property
+    def world_xy(self):
+        if self.world_xyz is None:
+            return None
+        return self.world_xyz[:2]
 
 
 class CameraController:
-    """WASD pan, right-drag orbit, scroll zoom (Elevation pattern)."""
+    """WASD pan, right-drag orbit, scroll zoom."""
 
     def __init__(self, app, center=Point3(0, 0, 0), dist=1400):
         self.app = app
@@ -141,80 +151,163 @@ class CameraController:
 
 
 class Picker:
-    def __init__(self, app):
+    def __init__(self, app, heightmap=None, terrain_np_getter=None):
         self.app = app
-        self.plane = Plane(Vec3(0, 0, 1), Point3(0, 0, 0))
+        self.heightmap = heightmap
+        self.terrain_np_getter = terrain_np_getter
 
-    def pick_ground(self):
+        self.cTrav = CollisionTraverser()
+        self.pQueue = CollisionHandlerQueue()
+
+        cn = CollisionNode("picker_ray")
+        cn.setFromCollideMask(BitMask32.bit(1))
+        cn.setIntoCollideMask(BitMask32.allOff())
+        self.pRay = CollisionRay()
+        cn.addSolid(self.pRay)
+        self.pNP = self.app.camera.attachNewNode(cn)
+        self.cTrav.addCollider(self.pNP, self.pQueue)
+
+    def pick_surface(self):
         if not self.app.mouseWatcherNode.hasMouse():
             return PickResult(None)
         mp = self.app.mouseWatcherNode.getMouse()
-        p_from = Point3()
-        p_to = Point3()
-        self.app.camLens.extrude(mp, p_from, p_to)
-        p_from = self.app.render.getRelativePoint(self.app.cam, p_from)
-        p_to = self.app.render.getRelativePoint(self.app.cam, p_to)
-        direction = p_to - p_from
-        hit = Point3()
-        if self.plane.intersectsLine(hit, p_from, p_to):
-            return PickResult(np.array([hit.x, hit.y]))
-        return PickResult(None)
+        self.pRay.setFromLens(self.app.camNode, mp.getX(), mp.getY())
+        self.cTrav.traverse(self.app.render)
+        if self.pQueue.getNumEntries() <= 0:
+            return PickResult(None)
+        self.pQueue.sortEntries()
+        pt = self.pQueue.getEntry(0).getSurfacePoint(self.app.render)
+        return PickResult(np.array([float(pt.x), float(pt.y), float(pt.z)]))
+
+    def pick_ground(self):
+        return self.pick_surface()
+
+    def get_elevation_at(self, world_x, world_y):
+        if self.heightmap is None:
+            return 0.0
+        return float(self.heightmap.get_height_at_world(world_x, world_y))
 
 
 class SceneRenderer:
-    def __init__(self, app):
+    def __init__(self, app, heightmap=None, terrain=None):
         self.app = app
+        self.heightmap = heightmap or Heightmap()
+        self.terrain = terrain or TerrainMesh(self.heightmap)
+
         self.root = app.render.attachNewNode("map_scene")
+        self.terrain_np = None
         self.grid_np = self.root.attachNewNode("grid")
         self.road_np = self.root.attachNewNode("roads")
         self.node_np = self.root.attachNewNode("nodes")
         self.overlay_np = self.root.attachNewNode("overlay")
         self._labels = []
 
-    def clear_overlay(self):
-        self.overlay_np.getChildren().detach()
+        self._init_lights()
+        self.draw_terrain()
 
-    def draw_grid(self, min_v=-1000, max_v=1000, step=50):
+    def _init_lights(self):
+        dl = DirectionalLight("terrain_sun")
+        dl.setColor(LColor(0.85, 0.85, 0.85, 1))
+        dn = self.app.render.attachNewNode(dl)
+        dn.setHpr(45, -45, 0)
+        self.app.render.setLight(dn)
+
+        al = AmbientLight("terrain_amb")
+        al.setColor(LColor(0.25, 0.25, 0.25, 1))
+        an = self.app.render.attachNewNode(al)
+        self.app.render.setLight(an)
+
+    def get_terrain_np(self):
+        return self.terrain_np
+
+    def terrain_elevation(self, x, y):
+        return float(self.heightmap.get_height_at_world(float(x), float(y)))
+
+    def draw_terrain(self):
+        self.terrain_np = self.terrain.build(self.root)
+        self.terrain_np.node().setIntoCollideMask(BitMask32.bit(1))
+        self.terrain_np.setBin("background", 0)
+        return self.terrain_np
+
+    def clear_overlay(self):
+        for child in self.overlay_np.getChildren():
+            child.removeNode()
+
+    def draw_grid(self, min_v=-1000, max_v=1000, step=50, sample_step=20):
         self.grid_np.removeNode()
         self.grid_np = self.root.attachNewNode("grid")
+
         segs = LineSegs("grid")
-        segs.setColor(0.9, 0.9, 0.9, 1)
+        segs.setColor(0.75, 0.75, 0.75, 0.9)
         segs.setThickness(1)
+
         for x in range(min_v, max_v + 1, step):
-            segs.moveTo(x, min_v, 0)
-            segs.drawTo(x, max_v, 0)
+            prev = None
+            for y in range(min_v, max_v + 1, sample_step):
+                z = self.terrain_elevation(x, y) + GRID_Z_OFFSET
+                p = (float(x), float(y), float(z))
+                if prev is None:
+                    prev = p
+                    continue
+                segs.moveTo(*prev)
+                segs.drawTo(*p)
+                prev = p
+
         for y in range(min_v, max_v + 1, step):
-            segs.moveTo(min_v, y, 0)
-            segs.drawTo(max_v, y, 0)
+            prev = None
+            for x in range(min_v, max_v + 1, sample_step):
+                z = self.terrain_elevation(x, y) + GRID_Z_OFFSET
+                p = (float(x), float(y), float(z))
+                if prev is None:
+                    prev = p
+                    continue
+                segs.moveTo(*prev)
+                segs.drawTo(*p)
+                prev = p
+
         self.grid_np.attachNewNode(segs.create())
 
-    def draw_roads(self, splines, color=(0.4, 0.4, 0.4, 1), width=2.0, z=0.2):
+    def draw_roads(self, splines, color=(0.4, 0.4, 0.4, 1), width=2.0, z=ROAD_Z_OFFSET):
         self.road_np.removeNode()
         self.road_np = self.root.attachNewNode("roads")
         segs = LineSegs("roads")
         segs.setColor(*color)
         segs.setThickness(width)
+
         for waypoints in splines:
             if len(waypoints) < 2:
                 continue
-            segs.moveTo(float(waypoints[0][0]), float(waypoints[0][1]), z)
+            x0 = float(waypoints[0][0])
+            y0 = float(waypoints[0][1])
+            z0 = self.terrain_elevation(x0, y0) + float(z)
+            segs.moveTo(x0, y0, z0)
             for p in waypoints[1:]:
-                segs.drawTo(float(p[0]), float(p[1]), z)
+                x = float(p[0])
+                y = float(p[1])
+                zz = self.terrain_elevation(x, y) + float(z)
+                segs.drawTo(x, y, zz)
+
         self.road_np.attachNewNode(segs.create())
 
-    def _point_cloud(self, points, colors, size=7, z=1.0):
+    def _point_cloud(self, points, colors, size=7, z=NODE_Z_OFFSET):
         fmt = GeomVertexFormat.getV3c4()
         vdata = GeomVertexData("points", fmt, Geom.UHStatic)
         vdata.setNumRows(len(points))
         vw = GeomVertexWriter(vdata, "vertex")
         cw = GeomVertexWriter(vdata, "color")
+
         for p, c in zip(points, colors):
-            vw.addData3f(float(p[0]), float(p[1]), z)
+            x = float(p[0])
+            y = float(p[1])
+            zz = self.terrain_elevation(x, y) + float(z)
+            vw.addData3f(x, y, zz)
             cw.addData4f(*c)
+
         prim = GeomPoints(Geom.UHStatic)
         for i in range(len(points)):
             prim.addVertex(i)
         prim.closePrimitive()
+
         geom = Geom(vdata)
         geom.addPrimitive(prim)
         node = GeomNode("points")
@@ -238,13 +331,25 @@ class SceneRenderer:
                 cols.append((1.0, 0.6, 0.0, 1.0))
             else:
                 cols.append((0.6, 0.0, 0.7, 1.0))
-        self._point_cloud(pts, cols)
+        self._point_cloud(pts, cols, z=NODE_Z_OFFSET)
+
         if show_names:
             for name, pos in nodes.items():
-                txt = OnscreenText(text=name, pos=(0, 0), scale=0.035, fg=(0, 0, 0, 1), mayChange=False, parent=self.app.aspect2d, align=TextNode.ALeft)
+                txt = OnscreenText(
+                    text=name,
+                    pos=(0, 0),
+                    scale=0.035,
+                    fg=(0, 0, 0, 1),
+                    mayChange=False,
+                    parent=self.app.aspect2d,
+                    align=TextNode.ALeft,
+                )
                 txt.setBin("fixed", 120)
                 txt.node_path = self.root.attachNewNode(name)
-                txt.node_path.setPos(float(pos[0]), float(pos[1]), 3.0)
+                px = float(pos[0])
+                py = float(pos[1])
+                pz = self.terrain_elevation(px, py) + 3.0
+                txt.node_path.setPos(px, py, pz)
                 self._labels.append(txt)
 
     def update_labels(self):

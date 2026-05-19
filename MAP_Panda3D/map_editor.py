@@ -171,7 +171,8 @@ class MapEditorMode:
                 self.redraw()
 
     def on_mouse1(self, down=True):
-        pick = self.app.picker.pick_ground().world_xy
+        pick_result = self.app.picker.pick_surface()
+        pick = pick_result.world_xy
         if self.mode == "manual":
             if down:
                 self.is_drawing_manual = True
@@ -242,8 +243,13 @@ class MapEditorMode:
             self.mode = "disconnect_start"
 
     def on_mouse_move(self):
+        pick_result = self.app.picker.pick_surface()
+        if pick_result.world_xyz is not None:
+            x, y, z = pick_result.world_xyz
+            base = self.status_text.split(" | Cursor:")[0]
+            self.status_text = f"{base} | Cursor: ({x:.1f}, {y:.1f}, {z:.1f})"
         if self.is_drawing_manual:
-            pick = self.app.picker.pick_ground().world_xy
+            pick = pick_result.world_xy
             if pick is not None:
                 p = np.array(pick)
                 if not self.manual_path or self._distance(self.manual_path[-1], p) > 2.0:
@@ -420,15 +426,20 @@ class MapEditorMode:
 
 def run_editor():
     from direct.showbase.ShowBase import ShowBase
+    from panda3d.core import Point3
     from panda_common import CameraController, Picker, SceneRenderer
 
     class _EditorApp(ShowBase):
         def __init__(self):
             super().__init__()
             self.disableMouse()
-            self.camera_controller = CameraController(self)
-            self.picker = Picker(self)
             self.renderer = SceneRenderer(self)
+            hm = self.renderer.heightmap
+            cx = hm.origin_x + hm.cols * hm.cell_size * 0.5
+            cy = hm.origin_y + hm.rows * hm.cell_size * 0.5
+            cz = hm.get_height_at_world(cx, cy)
+            self.camera_controller = CameraController(self, center=Point3(cx, cy, cz), dist=1400)
+            self.picker = Picker(self, heightmap=self.renderer.heightmap, terrain_np_getter=self.renderer.get_terrain_np)
             self.mode = MapEditorMode(self)
             self.mode.activate()
             self.accept("mouse1", self.mode.on_mouse1, [True])

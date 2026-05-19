@@ -1,0 +1,131 @@
+MAP -> MAP_Panda3D Port Analysis
+===============================
+
+1) Complete inventory of MAP features/functions/classes
+-------------------------------------------------------
+main.py
+- SingleWindowLauncher class
+- Persistent shared window and shared zoom/pan state
+- TAB/SHIFT+TAB mode cycling across 5 modes
+- Session save tracking and snapshot creation on exit
+
+Map_Editor.py
+- Data IO: load_map_data, save_map_data, regenerate_map_cache
+- SaveResult tuple + save-state helper functions
+- Geometry: Catmull-Rom spline generation, spline rebuild cache
+- Coordinate conversion: grid_to_screen, screen_to_grid
+- Drawing: grid, roads, nodes, connect/disconnect highlights, manual stroke preview
+- Node picking: get_node_at_pos
+- Intersection utility: segment intersection test and fix_intersections auto-node insertion
+- Editing modes:
+  * add_green (LOAD_ZONES)
+  * add_red (DUMP_ZONES)
+  * add_orange (FUEL_ZONES)
+  * add_purple (intermediate)
+  * delete
+  * connect (2-click)
+  * disconnect (2-click with chain split)
+  * manual draw (stroke -> decimated nodes -> chain + edges)
+  * fix intersections (auto split and edge rewiring)
+- Dirty tracking, save prompt on TAB switch, cache regeneration trigger
+
+Coal_Mine_Editor.py
+- Loads map_data.py and mine_config.json
+- Syncs config with current LOAD_ZONES
+- Edits truck_count and per-load-zone coal capacities
+- Coal-capacity visual overlays and mine hover details
+- Save to mine_config.json with copy to MAP + Simulation/Map
+
+Waypoint_Editor.py
+- Catmull-Rom waypoint generation per VISUAL_ROAD_CHAINS
+- Generate/save/load waypoint maps
+- Saves waypoints.pkl in Saved_Map and copies to MAP + Simulation/Map
+
+map_viewer.py
+- Read-only map rendering of roads and zones
+- Pan/zoom and node-name toggle
+
+waypoint_viewer.py
+- Loads waypoints.pkl + map_cache.pkl
+- Random load/dump pair route selection
+- A* node path + stitched spline waypoint execution path visualization
+
+test_waypoint_viewer.py
+- Fixed-route waypoint visualization harness
+
+generate_map_cache.py
+- Build weighted graph from NODES/EDGES
+- Compute all-pairs zone route cache
+- Save map_cache.pkl
+
+generate_map_data_json.py
+- Convert map_data.py structures to JSON schema for Simulation/Map/map_loader.py
+
+map_storage.py
+- Saved_Map path helpers, legacy/simulation copy paths
+- Snapshot creation under Saved_Map/History/<timestamp>
+
+map_ui.py
+- Save-confirm dialog (Y/N/Esc)
+- Mode overlay with mode number and dirty marker
+
+unified_map_launcher.py
+- Non-single-window launcher wrapper using mode returns
+
+session_tracker.py
+- global save flag helper
+
+map_data.py
+- Canonical data structures: NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS
+
+mine_config.json
+- truck_count + coal_capacities map
+
+
+2) Pygame -> Panda3D mapping
+----------------------------
+- pygame.display single window -> Panda3D ShowBase single persistent app
+- pygame event loop -> ShowBase accept() + taskMgr update loop
+- pygame draw.lines/circle -> Panda3D LineSegs + GeomPoints overlays
+- pygame HUD text -> OnscreenText
+- pygame mouse screen->world math -> Panda3D lens plane-picking (ground z=0)
+- pygame pan/zoom controls -> Elevation-style CameraController (WASD, RMB orbit, scroll zoom)
+- pygame modal save dialog -> OnscreenText save prompt state machine (Y/N/Esc)
+
+
+3) MAP_Panda3D file structure plan (implemented)
+------------------------------------------------
+MAP_Panda3D/
+- main.py (unified single-window launcher)
+- map_editor.py
+- coal_mine_editor.py
+- waypoint_editor.py
+- map_viewer.py
+- waypoint_viewer.py
+- test_waypoint_viewer.py
+- generate_map_cache.py
+- generate_map_data_json.py
+- map_storage.py
+- map_ui.py
+- unified_map_launcher.py
+- session_tracker.py
+- map_data.py
+- mine_config.json
+- panda_common.py (shared Panda3D utilities)
+- ANALYSIS.txt
+- Saved_Map/
+- Saved_Map/History/
+
+
+4) Data format compatibility notes
+----------------------------------
+- map_data.py: preserved Python module format with np.array coordinates and lists/tuples for edges/chains.
+- map_data.json: schema preserved with keys NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS.
+- waypoints.pkl: dictionary keyed by chain tuple -> list of numpy waypoint vectors, same as original.
+- map_cache.pkl: dict with keys road_graph and route_cache, same as original.
+- mine_config.json: JSON with truck_count and coal_capacities dict.
+- map_storage copy behavior preserved:
+  * primary write -> MAP_Panda3D/Saved_Map/
+  * copies to MAP_Panda3D legacy path
+  * copies to Simulation/Map path when required
+- Simulation compatibility target maintained by preserving structural field names and object layouts consumed by Simulation/Map/map_loader.py and Simulation/main.py.

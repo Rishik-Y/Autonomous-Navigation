@@ -1,0 +1,74 @@
+import map_data
+from panda_common import generate_curvy_path_from_nodes
+
+
+class MapViewerMode:
+    label = "Map Viewer"
+
+    def __init__(self, app):
+        self.app = app
+        self.show_node_names = False
+        self.PRE_CALCULATED_SPLINES = []
+        self.status_text = "Read-only map viewer"
+
+    def activate(self):
+        self.PRE_CALCULATED_SPLINES = []
+        for chain in map_data.VISUAL_ROAD_CHAINS:
+            node_coords = [map_data.NODES[node_name] for node_name in chain if node_name in map_data.NODES]
+            if len(node_coords) >= 2:
+                self.PRE_CALCULATED_SPLINES.append(generate_curvy_path_from_nodes(node_coords))
+        self.redraw()
+
+    def deactivate(self):
+        pass
+
+    def redraw(self):
+        self.app.renderer.draw_grid()
+        self.app.renderer.draw_roads(self.PRE_CALCULATED_SPLINES, color=(0.4, 0.4, 0.4, 1), width=2.0)
+        self.app.renderer.draw_nodes(map_data.NODES, map_data.LOAD_ZONES, map_data.DUMP_ZONES, map_data.FUEL_ZONES, self.show_node_names)
+
+    def on_key(self, key):
+        if key == "n":
+            self.show_node_names = not self.show_node_names
+            self.redraw()
+
+    def on_mouse1(self, down=True):
+        pass
+
+    def on_mouse_move(self):
+        pass
+
+    def tick(self):
+        self.app.renderer.update_labels()
+
+    @property
+    def controls_text(self):
+        return "WASD pan | RMB orbit | Scroll zoom | [N] Toggle names"
+
+
+def run_viewer():
+    from direct.showbase.ShowBase import ShowBase
+    from panda_common import CameraController, Picker, SceneRenderer
+
+    class _MapViewApp(ShowBase):
+        def __init__(self):
+            super().__init__()
+            self.disableMouse()
+            self.camera_controller = CameraController(self)
+            self.picker = Picker(self)
+            self.renderer = SceneRenderer(self)
+            self.mode = MapViewerMode(self)
+            self.mode.activate()
+            self.accept("n", self.mode.on_key, ["n"])
+            self.taskMgr.add(self._tick, "map_view_tick")
+
+        def _tick(self, task):
+            self.mode.tick()
+            return task.cont
+
+    app = _MapViewApp()
+    app.run()
+
+
+if __name__ == "__main__":
+    run_viewer()

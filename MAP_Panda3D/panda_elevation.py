@@ -13,6 +13,8 @@ from panda3d.core import (
     NodePath,
 )
 
+# MAP/Elevation shared coordinate system:
+# origin(-650,-450), 10m cells, and grid extents aligned with Elevation editor output.
 MAP_ORIGIN_X = -650.0
 MAP_ORIGIN_Y = -450.0
 CELL_SIZE = 10.0

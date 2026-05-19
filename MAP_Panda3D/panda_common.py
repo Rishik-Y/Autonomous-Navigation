@@ -39,6 +39,7 @@ NODE_Z_OFFSET = 0.6
 
 
 def catmull_rom_point(t, p0, p1, p2, p3):
+    # Standard uniform Catmull-Rom cubic interpolation between control points.
     return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * (t ** 2) + (-p0 + 3 * p1 - 3 * p2 + p3) * (t ** 3))
 
 
@@ -230,8 +231,7 @@ class SceneRenderer:
         return self.terrain_np
 
     def clear_overlay(self):
-        for child in self.overlay_np.getChildren():
-            child.removeNode()
+        self.overlay_np.getChildren().detach()
 
     def draw_grid(self, min_v=-1000, max_v=1000, step=50, sample_step=20):
         self.grid_np.removeNode()

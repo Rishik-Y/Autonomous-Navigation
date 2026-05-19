@@ -64,7 +64,8 @@ def get_path_from_nodes(route_node_names, waypoints_map):
             except ValueError:
                 continue
         if not found:
-            pass
+            # Keep behavior aligned with MAP/Simulation: silently skip missing segments.
+            continue
     if final_waypoints and route_node_names:
         final_waypoints.append(map_data.NODES[route_node_names[-1]])
     return final_waypoints

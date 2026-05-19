@@ -34,6 +34,7 @@ ROAD_WIDTH_M = 8.0
 
 
 def catmull_rom_point(t, p0, p1, p2, p3):
+    # Standard uniform Catmull-Rom cubic interpolation between control points.
     return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * (t ** 2) + (-p0 + 3 * p1 - 3 * p2 + p3) * (t ** 3))
 
 

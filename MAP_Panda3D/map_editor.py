@@ -435,7 +435,6 @@ def run_editor():
             self.accept("mouse1-up", self.mode.on_mouse1, [False])
             for k in "abcdefghijklmnopqrstuvwxyz":
                 self.accept(k, self.mode.on_key, [k])
-            self.accept("s", self.mode.on_key, ["s"])
             self.taskMgr.add(self._tick, "map_editor_tick")
 
         def _tick(self, task):

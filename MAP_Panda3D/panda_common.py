@@ -5,6 +5,7 @@ import numpy as np
 
 from direct.gui.OnscreenText import OnscreenText
 from direct.task.Task import Task
+from direct.showbase.ShowBaseGlobal import globalClock
 from panda3d.core import (
     BitMask32,
     CollisionHandlerQueue,

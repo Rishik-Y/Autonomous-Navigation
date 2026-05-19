@@ -55,6 +55,8 @@ def get_path_from_nodes(route_node_names, waypoints_map):
                 if idx + 1 < len(chain_tuple) and chain_tuple[idx + 1] == seg_start:
                     start = idx * POINTS_PER_SEGMENT
                     end = (idx + 1) * POINTS_PER_SEGMENT
+                    # Include end+1 here so reversing preserves the terminal waypoint
+                    # for this segment before dropping the duplicated join point.
                     segment = waypoints[start : end + 1]
                     final_waypoints.extend(segment[::-1][:-1])
                     found = True

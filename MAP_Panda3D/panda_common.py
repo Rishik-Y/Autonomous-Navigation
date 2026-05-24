@@ -238,7 +238,7 @@ class SceneRenderer:
     def clear_overlay(self):
         self.overlay_np.getChildren().detach()
 
-    def draw_grid(self, min_v=-750, max_v=750, step=50, sample_step=20):
+    def draw_grid(self, min_v=None, max_v=None, step=50, sample_step=20):
         self.grid_np.removeNode()
         self.grid_np = self.root.attachNewNode("grid")
 
@@ -246,9 +246,20 @@ class SceneRenderer:
         segs.setColor(0.75, 0.75, 0.75, 0.9)
         segs.setThickness(1)
 
-        for x in range(min_v, max_v + 1, step):
+        if min_v is None or max_v is None:
+            min_x = int(round(self.heightmap.origin_x))
+            max_x = int(round(self.heightmap.origin_x + self.heightmap.cols * self.heightmap.cell_size))
+            min_y = int(round(self.heightmap.origin_y))
+            max_y = int(round(self.heightmap.origin_y + self.heightmap.rows * self.heightmap.cell_size))
+        else:
+            min_x = int(min_v)
+            max_x = int(max_v)
+            min_y = int(min_v)
+            max_y = int(max_v)
+
+        for x in range(min_x, max_x + 1, step):
             prev = None
-            for y in range(min_v, max_v + 1, sample_step):
+            for y in range(min_y, max_y + 1, sample_step):
                 z = self.terrain_elevation(x, y) + GRID_Z_OFFSET
                 p = (float(x), float(y), float(z))
                 if prev is None:
@@ -258,9 +269,9 @@ class SceneRenderer:
                 segs.drawTo(*p)
                 prev = p
 
-        for y in range(min_v, max_v + 1, step):
+        for y in range(min_y, max_y + 1, step):
             prev = None
-            for x in range(min_v, max_v + 1, sample_step):
+            for x in range(min_x, max_x + 1, sample_step):
                 z = self.terrain_elevation(x, y) + GRID_Z_OFFSET
                 p = (float(x), float(y), float(z))
                 if prev is None:
@@ -323,7 +334,7 @@ class SceneRenderer:
     def draw_nodes(self, nodes, load_zones, dump_zones, fuel_zones, highlighted_node=None):
         self.node_np.removeNode()
         self.node_np = self.root.attachNewNode("nodes")
-        base_scale = 5.0
+        base_scale = 4.0 / METERS_TO_PIXELS
         for name, pos in nodes.items():
             if name in load_zones:
                 color = (0.0, 0.8, 0.0, 1.0)

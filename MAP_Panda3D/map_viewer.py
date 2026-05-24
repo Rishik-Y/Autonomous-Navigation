@@ -7,7 +7,6 @@ class MapViewerMode:
 
     def __init__(self, app):
         self.app = app
-        self.show_node_names = False
         self.PRE_CALCULATED_SPLINES = []
         self.status_text = "Read-only map viewer"
 
@@ -25,12 +24,10 @@ class MapViewerMode:
     def redraw(self):
         self.app.renderer.draw_grid()
         self.app.renderer.draw_roads(self.PRE_CALCULATED_SPLINES, color=(0.4, 0.4, 0.4, 1), width=2.0)
-        self.app.renderer.draw_nodes(map_data.NODES, map_data.LOAD_ZONES, map_data.DUMP_ZONES, map_data.FUEL_ZONES, self.show_node_names)
+        self.app.renderer.draw_nodes(map_data.NODES, map_data.LOAD_ZONES, map_data.DUMP_ZONES, map_data.FUEL_ZONES)
 
     def on_key(self, key):
-        if key == "n":
-            self.show_node_names = not self.show_node_names
-            self.redraw()
+        pass
 
     def on_mouse1(self, down=True):
         pass
@@ -39,11 +36,11 @@ class MapViewerMode:
         pass
 
     def tick(self):
-        self.app.renderer.update_labels()
+        pass
 
     @property
     def controls_text(self):
-        return "WASD pan | RMB orbit | Scroll zoom | [N] Toggle names"
+        return "Arrow pan | RMB orbit | Scroll zoom"
 
 
 def run_viewer():
@@ -64,7 +61,6 @@ def run_viewer():
             self.picker = Picker(self, heightmap=self.renderer.heightmap, terrain_np_getter=self.renderer.get_terrain_np)
             self.mode = MapViewerMode(self)
             self.mode.activate()
-            self.accept("n", self.mode.on_key, ["n"])
             self.taskMgr.add(self._tick, "map_view_tick")
 
         def _tick(self, task):

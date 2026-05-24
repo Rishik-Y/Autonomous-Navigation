@@ -62,7 +62,7 @@ class WaypointEditorMode:
     def redraw(self):
         self.app.renderer.draw_grid()
         self.app.renderer.draw_roads(self.background_splines_map.values(), color=(0.45, 0.45, 0.45, 1), width=2.0)
-        self.app.renderer.draw_nodes(map_data.NODES, map_data.LOAD_ZONES, map_data.DUMP_ZONES, map_data.FUEL_ZONES, False)
+        self.app.renderer.draw_nodes(map_data.NODES, map_data.LOAD_ZONES, map_data.DUMP_ZONES, map_data.FUEL_ZONES)
 
         points = []
         colors = []

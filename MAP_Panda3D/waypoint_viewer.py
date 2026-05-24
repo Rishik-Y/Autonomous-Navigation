@@ -121,7 +121,7 @@ class WaypointViewerMode:
     def redraw(self):
         self.app.renderer.draw_grid()
         self.app.renderer.draw_roads(self.waypoints_map.values(), color=(0.4, 0.4, 0.4, 1), width=2.0)
-        self.app.renderer.draw_nodes(map_data.NODES, map_data.LOAD_ZONES, map_data.DUMP_ZONES, map_data.FUEL_ZONES, False)
+        self.app.renderer.draw_nodes(map_data.NODES, map_data.LOAD_ZONES, map_data.DUMP_ZONES, map_data.FUEL_ZONES)
 
         if len(self.route_node_names) > 1:
             orange_path = [map_data.NODES[name] for name in self.route_node_names if name in map_data.NODES]

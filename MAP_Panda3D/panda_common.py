@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from direct.gui.OnscreenText import OnscreenText
 from direct.task.Task import Task
 from direct.showbase.ShowBaseGlobal import globalClock
 from panda3d.core import (
@@ -22,9 +21,7 @@ from panda3d.core import (
     AmbientLight,
     LColor,
     LineSegs,
-    Point2,
     Point3,
-    TextNode,
 )
 
 from panda_elevation import Heightmap, TerrainMesh
@@ -73,7 +70,7 @@ class PickResult:
 
 
 class CameraController:
-    """WASD pan, right-drag orbit, scroll zoom."""
+    """Arrow-key pan, right-drag orbit, scroll zoom."""
 
     def __init__(self, app, center=Point3(0, 0, 0), dist=1400):
         self.app = app
@@ -83,8 +80,9 @@ class CameraController:
         self.dist = dist
         self.heading = 45.0
         self.pitch = -55.0
-        self.keys = {k: False for k in ("w", "s", "a", "d")}
+        self.keys = {k: False for k in ("arrow_up", "arrow_down", "arrow_left", "arrow_right")}
         self.drag = None
+        self.pan_enabled = True
 
         app.camera.reparentTo(self.body)
         self._apply()
@@ -100,6 +98,12 @@ class CameraController:
 
     def _set_key(self, key, down):
         self.keys[key] = down
+
+    def set_pan_enabled(self, enabled):
+        self.pan_enabled = bool(enabled)
+        if not self.pan_enabled:
+            for key in self.keys:
+                self.keys[key] = False
 
     def _drag_start(self):
         if self.mouse.hasMouse():
@@ -130,18 +134,19 @@ class CameraController:
         rh = math.radians(self.heading)
         sin_h = math.sin(rh)
         cos_h = math.cos(rh)
-        if self.keys["w"]:
-            p = self.body.getPos()
-            self.body.setPos(p.x + dt * speed * sin_h, p.y + dt * speed * cos_h, p.z)
-        if self.keys["s"]:
-            p = self.body.getPos()
-            self.body.setPos(p.x - dt * speed * sin_h, p.y - dt * speed * cos_h, p.z)
-        if self.keys["a"]:
-            p = self.body.getPos()
-            self.body.setPos(p.x - dt * speed * cos_h, p.y + dt * speed * sin_h, p.z)
-        if self.keys["d"]:
-            p = self.body.getPos()
-            self.body.setPos(p.x + dt * speed * cos_h, p.y - dt * speed * sin_h, p.z)
+        if self.pan_enabled:
+            if self.keys["arrow_up"]:
+                p = self.body.getPos()
+                self.body.setPos(p.x + dt * speed * sin_h, p.y + dt * speed * cos_h, p.z)
+            if self.keys["arrow_down"]:
+                p = self.body.getPos()
+                self.body.setPos(p.x - dt * speed * sin_h, p.y - dt * speed * cos_h, p.z)
+            if self.keys["arrow_left"]:
+                p = self.body.getPos()
+                self.body.setPos(p.x - dt * speed * cos_h, p.y + dt * speed * sin_h, p.z)
+            if self.keys["arrow_right"]:
+                p = self.body.getPos()
+                self.body.setPos(p.x + dt * speed * cos_h, p.y - dt * speed * sin_h, p.z)
         if self.drag and self.mouse.hasMouse():
             m = self.mouse.getMouse()
             sx, sy, sh, sp = self.drag
@@ -201,7 +206,7 @@ class SceneRenderer:
         self.road_np = self.root.attachNewNode("roads")
         self.node_np = self.root.attachNewNode("nodes")
         self.overlay_np = self.root.attachNewNode("overlay")
-        self._labels = []
+        self._sphere_model = self.app.loader.loadModel("models/misc/sphere")
 
         self._init_lights()
         self.draw_terrain()
@@ -233,7 +238,7 @@ class SceneRenderer:
     def clear_overlay(self):
         self.overlay_np.getChildren().detach()
 
-    def draw_grid(self, min_v=-1000, max_v=1000, step=50, sample_step=20):
+    def draw_grid(self, min_v=-750, max_v=750, step=50, sample_step=20):
         self.grid_np.removeNode()
         self.grid_np = self.root.attachNewNode("grid")
 
@@ -315,59 +320,28 @@ class SceneRenderer:
         np_node = self.node_np.attachNewNode(node)
         np_node.setRenderModeThickness(size)
 
-    def draw_nodes(self, nodes, load_zones, dump_zones, fuel_zones, show_names=False):
+    def draw_nodes(self, nodes, load_zones, dump_zones, fuel_zones, highlighted_node=None):
         self.node_np.removeNode()
         self.node_np = self.root.attachNewNode("nodes")
-        self._clear_labels()
-        pts = []
-        cols = []
+        base_scale = 5.0
         for name, pos in nodes.items():
-            pts.append(pos)
             if name in load_zones:
-                cols.append((0.0, 0.8, 0.0, 1.0))
+                color = (0.0, 0.8, 0.0, 1.0)
             elif name in dump_zones:
-                cols.append((0.9, 0.1, 0.1, 1.0))
+                color = (0.9, 0.1, 0.1, 1.0)
             elif name in fuel_zones:
-                cols.append((1.0, 0.6, 0.0, 1.0))
+                color = (1.0, 0.6, 0.0, 1.0)
             else:
-                cols.append((0.6, 0.0, 0.7, 1.0))
-        self._point_cloud(pts, cols, z=NODE_Z_OFFSET)
-
-        if show_names:
-            for name, pos in nodes.items():
-                txt = OnscreenText(
-                    text=name,
-                    pos=(0, 0),
-                    scale=0.035,
-                    fg=(0, 0, 0, 1),
-                    mayChange=False,
-                    parent=self.app.aspect2d,
-                    align=TextNode.ALeft,
-                )
-                txt.setBin("fixed", 120)
-                txt.node_path = self.root.attachNewNode(name)
-                px = float(pos[0])
-                py = float(pos[1])
-                pz = self.terrain_elevation(px, py) + 3.0
-                txt.node_path.setPos(px, py, pz)
-                self._labels.append(txt)
-
-    def update_labels(self):
-        for txt in self._labels:
-            p3 = txt.node_path.getPos(self.app.render)
-            p2 = Point2()
-            if self.app.camLens.project(p3, p2):
-                txt.setPos((p2.x, p2.y))
-            else:
-                txt.setPos((3, 3))
-
-    def _clear_labels(self):
-        for txt in self._labels:
-            if hasattr(txt, "node_path"):
-                txt.node_path.removeNode()
-            txt.destroy()
-        self._labels = []
+                color = (0.6, 0.0, 0.7, 1.0)
+            if name == highlighted_node:
+                color = (1.0, 0.9, 0.1, 1.0)
+            px = float(pos[0])
+            py = float(pos[1])
+            pz = self.terrain_elevation(px, py) + NODE_Z_OFFSET
+            sphere = self._sphere_model.copyTo(self.node_np)
+            sphere.setPos(px, py, pz)
+            sphere.setScale(base_scale * (1.2 if name == highlighted_node else 1.0))
+            sphere.setColor(*color)
 
     def destroy(self):
-        self._clear_labels()
         self.root.removeNode()

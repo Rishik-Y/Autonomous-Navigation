@@ -7,13 +7,13 @@ class ModeOverlay:
         self.app = app
         self.text = OnscreenText(
             text="",
-            pos=(1.27, 0.93),
+            pos=(-0.03, -0.06),
             scale=0.045,
             fg=(0, 0, 0, 1),
             bg=(1, 1, 1, 0.8),
             align=TextNode.ARight,
             mayChange=True,
-            parent=app.aspect2d,
+            parent=app.a2dTopRight,
         )
 
     def update(self, mode_label, mode_index, total_modes, is_dirty=False):
@@ -29,9 +29,9 @@ class ModeOverlay:
 class StatusHud:
     def __init__(self, app):
         self.app = app
-        self.title = OnscreenText(text="", pos=(-1.3, 0.94), scale=0.05, align=TextNode.ALeft, mayChange=True, parent=app.aspect2d)
-        self.controls = OnscreenText(text="", pos=(-1.3, 0.88), scale=0.038, align=TextNode.ALeft, mayChange=True, parent=app.aspect2d)
-        self.status = OnscreenText(text="", pos=(0, -0.94), scale=0.04, align=TextNode.ACenter, mayChange=True, parent=app.aspect2d)
+        self.title = OnscreenText(text="", pos=(0.03, -0.06), scale=0.05, align=TextNode.ALeft, mayChange=True, parent=app.a2dTopLeft)
+        self.controls = OnscreenText(text="", pos=(0.03, -0.14), scale=0.038, align=TextNode.ALeft, mayChange=True, parent=app.a2dTopLeft)
+        self.status = OnscreenText(text="", pos=(0.03, 0.06), scale=0.04, align=TextNode.ALeft, mayChange=True, parent=app.a2dBottomLeft)
 
     def update(self, title, controls, status):
         self.title.setText(title)

@@ -25,7 +25,6 @@ class MapEditorMode:
         self.manual_path = []
         self.is_dirty = False
         self.cache_needs_regen = False
-        self.show_node_names = False
 
         self.NODES = {}
         self.EDGES = []
@@ -112,7 +111,7 @@ class MapEditorMode:
     def redraw(self):
         self.app.renderer.draw_grid()
         self.app.renderer.draw_roads(self.PRE_CALCULATED_SPLINES)
-        self.app.renderer.draw_nodes(self.NODES, self.LOAD_ZONES, self.DUMP_ZONES, self.FUEL_ZONES, self.show_node_names)
+        self.app.renderer.draw_nodes(self.NODES, self.LOAD_ZONES, self.DUMP_ZONES, self.FUEL_ZONES)
 
     def _distance(self, p1, p2):
         return float(np.linalg.norm(np.array(p1) - np.array(p2)))
@@ -142,10 +141,6 @@ class MapEditorMode:
     def on_key(self, key):
         if key == "s":
             self.save_map_data()
-            self.redraw()
-            return
-        if key == "n":
-            self.show_node_names = not self.show_node_names
             self.redraw()
             return
         mode_map = {
@@ -417,11 +412,11 @@ class MapEditorMode:
         return len(found)
 
     def tick(self):
-        self.app.renderer.update_labels()
+        pass
 
     @property
     def controls_text(self):
-        return "[G] Load [R] Dump [O] Fuel [P] Purple [W] Delete [C] Connect [D] Disconnect [M] Manual [F] Fix [S] Save [N] Names"
+        return "[G] Load [R] Dump [O] Fuel [P] Purple [W] Delete [C] Connect [D] Disconnect [M] Manual [F] Fix [S] Save"
 
 
 def run_editor():

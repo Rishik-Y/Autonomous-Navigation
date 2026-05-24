@@ -1,0 +1,42 @@
+ALIGNMENT ANALYSIS: FINAL PRECISION PASS
+
+1) Grid Fit Math (SceneRenderer.draw_grid)
+
+Current scene coordinates are defined by the active heightmap:
+- origin_x = self.heightmap.origin_x
+- origin_y = self.heightmap.origin_y
+- cols = self.heightmap.cols
+- rows = self.heightmap.rows
+- cell_size = self.heightmap.cell_size
+
+So the terrain footprint in world space is:
+- X start = origin_x
+- X end   = origin_x + (cols * cell_size)
+- Y start = origin_y
+- Y end   = origin_y + (rows * cell_size)
+
+Grid iteration must be tied directly to those bounds:
+- min_x = int(self.heightmap.origin_x)
+- max_x = int(self.heightmap.origin_x + self.heightmap.cols * self.heightmap.cell_size)
+- min_y = int(self.heightmap.origin_y)
+- max_y = int(self.heightmap.origin_y + self.heightmap.rows * self.heightmap.cell_size)
+
+Then use those values in both line families:
+- for x in range(min_x, max_x + 1, step): sample y across [min_y, max_y]
+- for y in range(min_y, max_y + 1, step): sample x across [min_x, max_x]
+
+This makes the rendered grid occupy the exact same coordinate envelope as the map terrain and map data.
+
+2) Sphere Rescaling Math (SceneRenderer.draw_nodes)
+
+Original 2D node radius reference:
+- pygame node radius baseline = 4 pixels
+- METERS_TO_PIXELS = 6.0
+
+World-space radius conversion:
+- radius_m = 4 / 6.0 = 0.666666...
+
+Precision target for Panda3D node spheres:
+- set uniform sphere scale = 0.66
+
+Applying sphere.setScale(0.66) restores compact marker proportions relative to 8.0m roads.

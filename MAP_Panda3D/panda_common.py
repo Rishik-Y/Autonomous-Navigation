@@ -428,6 +428,7 @@ class SceneRenderer:
         path_np.setLightOff()
 
     def clear_path_lines(self):
+        """Clear the yellow waypoint path lines."""
         self.path_np.removeNode()
         self.path_np = self.root.attachNewNode("path_lines")
 

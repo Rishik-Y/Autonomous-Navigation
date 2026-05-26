@@ -338,6 +338,7 @@ class SceneRenderer:
     def draw_roads(self, splines, color=(0.4, 0.4, 0.4, 1), width=2.0, z=ROAD_Z_OFFSET):
         self.road_np.removeNode()
         self.road_np = self.root.attachNewNode("roads")
+        self.road_np.setLightOff(1)
         road_width = ROAD_WIDTH_M * (float(width) / 2.0)
         z_offset = float(z)
         if road_width <= 0:
@@ -395,7 +396,7 @@ class SceneRenderer:
         gnode.addGeom(geom)
         road_np = self.road_np.attachNewNode(gnode)
         road_np.setTwoSided(True)
-        road_np.setLightOff()
+        road_np.setLightOff(1)
         if len(color) > 3 and color[3] < 1.0:
             road_np.setTransparency(TransparencyAttrib.MAlpha)
 

@@ -1,0 +1,21 @@
+REGRESSION FIX ANALYSIS
+
+1) Road Colors & Z-Fighting
+- Ensure SceneRenderer.draw_roads applies ROAD_Z_OFFSET to every ribbon vertex and warning marker so the mesh rides above the terrain.
+- Disable lighting on the road node (setLightOff) so vertex colors render as solid, vibrant ribbons rather than being darkened by directional lights.
+- Keep the road geometry rebuilt after terrain updates to prevent z-fighting and washed-out appearance.
+
+2) Yellow Line Isolation
+- Add a dedicated SceneRenderer.clear_path_lines() method that removes the path_lines node.
+- Call clear_path_lines() when Waypoint Viewer (and Waypoint Editor) deactivates and before a redraw so leftover yellow lines are always removed when leaving the mode.
+- Only draw the yellow path via draw_path_lines() inside Waypoint Viewer’s redraw cycle.
+
+3) Elevation Mode Roads
+- Build road splines from map_data.VISUAL_ROAD_CHAINS using generate_curvy_path_from_nodes.
+- When Elevation Editor builds terrain (during _rebuild_terrain), immediately call renderer.draw_roads(...) with these splines so roads and red steepness warnings remain visible while editing.
+
+4) Correct '0' Leveling Math
+- For the target cell, collect the 8 neighboring heights (N, S, E, W, NE, NW, SE, SW) that are within bounds.
+- Compute the exact average of those neighbors.
+- If current_height < average, increment by 1. If current_height > average, decrement by 1. If equal, do nothing.
+- This yields the XXX / X_X / XXX behavior: repeated taps on the center cell step it toward the surrounding level and stop when flattened.

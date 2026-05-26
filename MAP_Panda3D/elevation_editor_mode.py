@@ -10,7 +10,9 @@ from panda3d.core import (
     TransparencyAttrib,
 )
 
+import map_data
 import session_tracker
+from panda_common import generate_curvy_path_from_nodes
 
 HIGHLIGHT_Z_OFFSET = 0.4
 MAX_BRUSH_SIZE = 9
@@ -84,7 +86,16 @@ class ElevationEditorMode:
         self._saved_files = []
         self.undo_stack = []
         self.highlight = BrushHighlight(self.app.renderer.root, self.heightmap.cell_size)
+        self._build_roads_splines()
         self._update_base_status()
+
+    def _build_roads_splines(self):
+        """Build the road splines from map_data."""
+        self.PRE_CALCULATED_SPLINES = []
+        for chain in map_data.VISUAL_ROAD_CHAINS:
+            node_coords = [map_data.NODES[node_name] for node_name in chain if node_name in map_data.NODES]
+            if len(node_coords) >= 2:
+                self.PRE_CALCULATED_SPLINES.append(generate_curvy_path_from_nodes(node_coords))
 
     def activate(self):
         self.hovered_cell = None
@@ -107,7 +118,7 @@ class ElevationEditorMode:
 
     def redraw(self):
         self.app.renderer.draw_grid()
-        self.app.renderer.draw_roads([])
+        self.app.renderer.draw_roads(self.PRE_CALCULATED_SPLINES, color=(0.4, 0.4, 0.4, 1), width=2.0)
         self.app.renderer.draw_nodes({}, [], [], [])
 
     def _update_base_status(self, extra=None):
@@ -230,6 +241,7 @@ class ElevationEditorMode:
     def _rebuild_terrain(self):
         self.app.renderer.draw_terrain()
         self.app.renderer.draw_grid()
+        self.app.renderer.draw_roads(self.PRE_CALCULATED_SPLINES, color=(0.4, 0.4, 0.4, 1), width=2.0)
 
     def _undo(self):
         if not self.undo_stack:

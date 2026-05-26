@@ -34,6 +34,7 @@ ROAD_WIDTH_M = 8.0
 ROAD_STEEP_THRESHOLD = 8.0
 ROAD_WARNING_ALPHA = 0.35
 ROAD_WARNING_RADIUS_MULT = 1.4
+ROAD_FIXED_COLOR = (0.39, 0.39, 0.39, 1.0)
 
 GRID_Z_OFFSET = -0.2
 ROAD_Z_OFFSET = 0.7
@@ -339,8 +340,10 @@ class SceneRenderer:
         self.road_np.removeNode()
         self.road_np = self.root.attachNewNode("roads")
         self.road_np.setLightOff(1)
+        self.road_np.setColorScaleOff(1)
         road_width = ROAD_WIDTH_M * (float(width) / 2.0)
         z_offset = float(z)
+        fixed_color = ROAD_FIXED_COLOR
         if road_width <= 0:
             return
 
@@ -375,7 +378,7 @@ class SceneRenderer:
                 r1 = (r1[0], r1[1], r1[2] + z_offset)
                 base = len(verts)
                 verts.extend((l0, r0, r1, l1))
-                colors.extend((color, color, color, color))
+                colors.extend((fixed_color, fixed_color, fixed_color, fixed_color))
                 tris.addVertices(base, base + 1, base + 2)
                 tris.addVertices(base, base + 2, base + 3)
 
@@ -397,8 +400,7 @@ class SceneRenderer:
         road_np = self.road_np.attachNewNode(gnode)
         road_np.setTwoSided(True)
         road_np.setLightOff(1)
-        if len(color) > 3 and color[3] < 1.0:
-            road_np.setTransparency(TransparencyAttrib.MAlpha)
+        road_np.setColorScaleOff(1)
 
         warn_radius = road_width * ROAD_WARNING_RADIUS_MULT
         for x, y, zz in warnings:

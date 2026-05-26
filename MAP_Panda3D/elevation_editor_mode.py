@@ -203,8 +203,39 @@ class ElevationEditorMode:
         self.last_edit = (col, row)
         col_start = col - (self.brush_size - 1) // 2
         row_start = row - (self.brush_size - 1) // 2
+        cells = []
         for c in range(col_start, col_start + self.brush_size):
             for r in range(row_start, row_start + self.brush_size):
+                if 0 <= c < self.heightmap.cols and 0 <= r < self.heightmap.rows:
+                    cells.append((c, r))
+
+        if self.edit_mode == "0":
+            source = self.heightmap.data.copy()
+            updates = []
+            for c, r in cells:
+                h = int(source[r, c])
+                total = 0.0
+                count = 0
+                for dc in (-1, 0, 1):
+                    for dr in (-1, 0, 1):
+                        if dc == 0 and dr == 0:
+                            continue
+                        nc = c + dc
+                        nr = r + dr
+                        if 0 <= nc < self.heightmap.cols and 0 <= nr < self.heightmap.rows:
+                            total += float(source[nr, nc])
+                            count += 1
+                if count == 0:
+                    continue
+                avg = total / float(count)
+                if h < avg:
+                    updates.append((c, r, h + 1))
+                elif h > avg:
+                    updates.append((c, r, h - 1))
+            for c, r, val in updates:
+                self.heightmap.set(c, r, val)
+        else:
+            for c, r in cells:
                 self._modify_cell(c, r)
         self.is_dirty = True
         self._rebuild_terrain()
@@ -218,25 +249,6 @@ class ElevationEditorMode:
             self.heightmap.set(col, row, h + 1)
         elif self.edit_mode == "-":
             self.heightmap.set(col, row, h - 1)
-        elif self.edit_mode == "0":
-            total = 0
-            count = 0
-            for dc in (-1, 0, 1):
-                for dr in (-1, 0, 1):
-                    if dc == 0 and dr == 0:
-                        continue
-                    nc = col + dc
-                    nr = row + dr
-                    if 0 <= nc < self.heightmap.cols and 0 <= nr < self.heightmap.rows:
-                        total += self.heightmap.get(nc, nr)
-                        count += 1
-            if count == 0:
-                return
-            avg = total / float(count)
-            if h < avg:
-                self.heightmap.set(col, row, h + 1)
-            elif h > avg:
-                self.heightmap.set(col, row, h - 1)
 
     def _rebuild_terrain(self):
         self.app.renderer.draw_terrain()

@@ -14,6 +14,7 @@ from panda3d.core import (
     Geom,
     GeomNode,
     GeomPoints,
+    GeomTriangles,
     GeomVertexData,
     GeomVertexFormat,
     GeomVertexWriter,
@@ -22,6 +23,7 @@ from panda3d.core import (
     LColor,
     LineSegs,
     Point3,
+    TransparencyAttrib,
 )
 
 from panda_elevation import Heightmap, TerrainMesh
@@ -29,6 +31,9 @@ from panda_elevation import Heightmap, TerrainMesh
 METERS_TO_PIXELS = 6.0
 POINTS_PER_SEGMENT = 20
 ROAD_WIDTH_M = 8.0
+ROAD_STEEP_THRESHOLD = 8.0
+ROAD_WARNING_ALPHA = 0.35
+ROAD_WARNING_RADIUS_MULT = 1.4
 
 GRID_Z_OFFSET = -0.2
 ROAD_Z_OFFSET = 0.7
@@ -277,27 +282,119 @@ class SceneRenderer:
 
         self.grid_np.attachNewNode(segs.create())
 
+    def _road_segment_steep(self, l0, r0, l1, r1):
+        checks = (
+            abs(l0[2] - r0[2]),
+            abs(l1[2] - r1[2]),
+            abs(l0[2] - l1[2]),
+            abs(r0[2] - r1[2]),
+        )
+        return max(checks) > ROAD_STEEP_THRESHOLD
+
+    def _road_edges(self, waypoints, half_width, z_offset):
+        lefts = []
+        rights = []
+        count = len(waypoints)
+        for i, p in enumerate(waypoints):
+            px = float(p[0])
+            py = float(p[1])
+            if count == 1:
+                dx, dy = 1.0, 0.0
+            elif i == 0:
+                dx = float(waypoints[1][0]) - px
+                dy = float(waypoints[1][1]) - py
+            elif i == count - 1:
+                dx = px - float(waypoints[i - 1][0])
+                dy = py - float(waypoints[i - 1][1])
+            else:
+                dx = float(waypoints[i + 1][0]) - float(waypoints[i - 1][0])
+                dy = float(waypoints[i + 1][1]) - float(waypoints[i - 1][1])
+            length = math.hypot(dx, dy)
+            if length <= 1e-6:
+                nx, ny = 0.0, 1.0
+            else:
+                nx, ny = -dy / length, dx / length
+            lx = px + nx * half_width
+            ly = py + ny * half_width
+            rx = px - nx * half_width
+            ry = py - ny * half_width
+            lz = self.terrain_elevation(lx, ly) + z_offset
+            rz = self.terrain_elevation(rx, ry) + z_offset
+            lefts.append((lx, ly, lz))
+            rights.append((rx, ry, rz))
+        return lefts, rights
+
+    def _spawn_warning_zone(self, x, y, z, radius):
+        sphere = self._sphere_model.copyTo(self.road_np)
+        sphere.setPos(float(x), float(y), float(z))
+        sphere.setScale(radius)
+        sphere.setColor(1.0, 0.1, 0.1, ROAD_WARNING_ALPHA)
+        sphere.setTransparency(TransparencyAttrib.MAlpha)
+        sphere.setBin("fixed", 60)
+        sphere.setDepthWrite(False)
+        sphere.setLightOff()
+
     def draw_roads(self, splines, color=(0.4, 0.4, 0.4, 1), width=2.0, z=ROAD_Z_OFFSET):
         self.road_np.removeNode()
         self.road_np = self.root.attachNewNode("roads")
-        segs = LineSegs("roads")
-        segs.setColor(*color)
-        segs.setThickness(width)
+        road_width = ROAD_WIDTH_M * (float(width) / 2.0)
+        if road_width <= 0:
+            return
+
+        fmt = GeomVertexFormat.getV3c4()
+        vdata = GeomVertexData("roads", fmt, Geom.UHStatic)
+        verts = []
+        colors = []
+        warnings = []
+        tris = GeomTriangles(Geom.UHStatic)
 
         for waypoints in splines:
             if len(waypoints) < 2:
                 continue
-            x0 = float(waypoints[0][0])
-            y0 = float(waypoints[0][1])
-            z0 = self.terrain_elevation(x0, y0) + float(z)
-            segs.moveTo(x0, y0, z0)
-            for p in waypoints[1:]:
-                x = float(p[0])
-                y = float(p[1])
-                zz = self.terrain_elevation(x, y) + float(z)
-                segs.drawTo(x, y, zz)
+            lefts, rights = self._road_edges(waypoints, road_width * 0.5, float(z))
+            for i in range(len(waypoints) - 1):
+                l0 = lefts[i]
+                r0 = rights[i]
+                l1 = lefts[i + 1]
+                r1 = rights[i + 1]
+                if self._road_segment_steep(l0, r0, l1, r1):
+                    flat_z = max(l0[2], r0[2], l1[2], r1[2])
+                    l0 = (l0[0], l0[1], flat_z)
+                    r0 = (r0[0], r0[1], flat_z)
+                    l1 = (l1[0], l1[1], flat_z)
+                    r1 = (r1[0], r1[1], flat_z)
+                    mid_x = (float(waypoints[i][0]) + float(waypoints[i + 1][0])) * 0.5
+                    mid_y = (float(waypoints[i][1]) + float(waypoints[i + 1][1])) * 0.5
+                    warnings.append((mid_x, mid_y, flat_z))
+                base = len(verts)
+                verts.extend((l0, r0, r1, l1))
+                colors.extend((color, color, color, color))
+                tris.addVertices(base, base + 1, base + 2)
+                tris.addVertices(base, base + 2, base + 3)
 
-        self.road_np.attachNewNode(segs.create())
+        if not verts:
+            return
+
+        vdata.setNumRows(len(verts))
+        vw = GeomVertexWriter(vdata, "vertex")
+        cw = GeomVertexWriter(vdata, "color")
+        for v, c in zip(verts, colors):
+            vw.addData3f(*v)
+            cw.addData4f(*c)
+
+        tris.closePrimitive()
+        geom = Geom(vdata)
+        geom.addPrimitive(tris)
+        gnode = GeomNode("roads")
+        gnode.addGeom(geom)
+        road_np = self.road_np.attachNewNode(gnode)
+        road_np.setTwoSided(True)
+        if len(color) > 3 and color[3] < 1.0:
+            road_np.setTransparency(TransparencyAttrib.MAlpha)
+
+        warn_radius = road_width * ROAD_WARNING_RADIUS_MULT
+        for x, y, zz in warnings:
+            self._spawn_warning_zone(x, y, zz, warn_radius)
 
     def _point_cloud(self, points, colors, size=7, z=NODE_Z_OFFSET):
         fmt = GeomVertexFormat.getV3c4()

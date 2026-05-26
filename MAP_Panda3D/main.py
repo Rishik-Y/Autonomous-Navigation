@@ -8,6 +8,7 @@ from panda3d.core import Point3, loadPrcFileData
 import map_storage
 import session_tracker
 from coal_mine_editor import CoalMineEditorMode
+from elevation_editor_mode import ElevationEditorMode
 from map_editor import MapEditorMode
 from map_ui import ModeOverlay, SavePrompt, StatusHud
 from map_viewer import MapViewerMode
@@ -50,6 +51,7 @@ class UnifiedPandaMapLauncher(ShowBase):
             WaypointEditorMode(self),
             MapViewerMode(self),
             WaypointViewerMode(self),
+            ElevationEditorMode(self),
         ]
         self.mode_index = 0
         self.current_mode = self.modes[self.mode_index]
@@ -62,7 +64,7 @@ class UnifiedPandaMapLauncher(ShowBase):
         for key in "abcdefghijklmnopqrstuvwxyz":
             self.accept(key, self.handle_key, [key])
             self.accept(key.upper(), self.handle_key, [key.upper()])
-        for key in ["+", "=", "-", "space"]:
+        for key in ["+", "=", "-", "_", "0", "space"]:
             self.accept(key, self.handle_key, [key])
 
         self.accept("mouse1", self.on_mouse1_down)
@@ -96,6 +98,8 @@ class UnifiedPandaMapLauncher(ShowBase):
                 self.current_mode.save_config()
             elif hasattr(self.current_mode, "save_waypoints_data"):
                 self.current_mode.save_waypoints_data()
+            elif hasattr(self.current_mode, "save_elevation_data"):
+                self.current_mode.save_elevation_data()
         elif choice == "cancel":
             self.pending_switch = None
             return

@@ -125,7 +125,7 @@ class WaypointViewerMode:
 
         if len(self.route_node_names) > 1:
             orange_path = [map_data.NODES[name] for name in self.route_node_names if name in map_data.NODES]
-            self.app.renderer.draw_roads([orange_path], color=(1.0, 0.55, 0.0, 1), width=4.0, z=1.1)
+            self.app.renderer.draw_path_lines([orange_path], color=(1.0, 1.0, 0.0, 1.0), width=3.0)
 
         if self.waypoints_m:
             colors = [(0.0, 0.6, 1.0, 1.0)] * len(self.waypoints_m)

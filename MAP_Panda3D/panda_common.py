@@ -209,7 +209,6 @@ class SceneRenderer:
         self.terrain_np = None
         self.grid_np = self.root.attachNewNode("grid")
         self.road_np = self.root.attachNewNode("roads")
-        self.path_np = self.root.attachNewNode("path_lines")
         self.node_np = self.root.attachNewNode("nodes")
         self.overlay_np = self.root.attachNewNode("overlay")
         self._sphere_model = self.app.loader.loadModel("models/misc/sphere")
@@ -339,7 +338,6 @@ class SceneRenderer:
         self.road_np.removeNode()
         self.road_np = self.root.attachNewNode("roads")
         road_width = ROAD_WIDTH_M * (float(width) / 2.0)
-        z_offset = float(z)
         if road_width <= 0:
             return
 
@@ -353,7 +351,7 @@ class SceneRenderer:
         for waypoints in splines:
             if len(waypoints) < 2:
                 continue
-            lefts, rights = self._road_edges(waypoints, road_width * 0.5, 0.0)
+            lefts, rights = self._road_edges(waypoints, road_width * 0.5, float(z))
             for i in range(len(waypoints) - 1):
                 l0 = lefts[i]
                 r0 = rights[i]
@@ -367,11 +365,7 @@ class SceneRenderer:
                     r1 = (r1[0], r1[1], flat_z)
                     mid_x = (float(waypoints[i][0]) + float(waypoints[i + 1][0])) * 0.5
                     mid_y = (float(waypoints[i][1]) + float(waypoints[i + 1][1])) * 0.5
-                    warnings.append((mid_x, mid_y, flat_z + z_offset))
-                l0 = (l0[0], l0[1], l0[2] + z_offset)
-                r0 = (r0[0], r0[1], r0[2] + z_offset)
-                l1 = (l1[0], l1[1], l1[2] + z_offset)
-                r1 = (r1[0], r1[1], r1[2] + z_offset)
+                    warnings.append((mid_x, mid_y, flat_z))
                 base = len(verts)
                 verts.extend((l0, r0, r1, l1))
                 colors.extend((color, color, color, color))
@@ -395,36 +389,12 @@ class SceneRenderer:
         gnode.addGeom(geom)
         road_np = self.road_np.attachNewNode(gnode)
         road_np.setTwoSided(True)
-        road_np.setLightOff()
         if len(color) > 3 and color[3] < 1.0:
             road_np.setTransparency(TransparencyAttrib.MAlpha)
 
         warn_radius = road_width * ROAD_WARNING_RADIUS_MULT
         for x, y, zz in warnings:
             self._spawn_warning_zone(x, y, zz, warn_radius)
-
-    def draw_path_lines(self, splines, color=(1.0, 1.0, 0.0, 1.0), width=3.0, z=ROAD_Z_OFFSET):
-        self.path_np.removeNode()
-        self.path_np = self.root.attachNewNode("path_lines")
-        segs = LineSegs("path_lines")
-        segs.setColor(*color)
-        segs.setThickness(float(width))
-        z_offset = float(z)
-        for waypoints in splines:
-            if len(waypoints) < 2:
-                continue
-            first = True
-            for p in waypoints:
-                x = float(p[0])
-                y = float(p[1])
-                zz = self.terrain_elevation(x, y) + z_offset
-                if first:
-                    segs.moveTo(x, y, zz)
-                    first = False
-                else:
-                    segs.drawTo(x, y, zz)
-        path_np = self.path_np.attachNewNode(segs.create())
-        path_np.setLightOff()
 
     def _point_cloud(self, points, colors, size=7, z=NODE_Z_OFFSET):
         fmt = GeomVertexFormat.getV3c4()

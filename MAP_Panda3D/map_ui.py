@@ -65,7 +65,7 @@ class SavePrompt:
     def show(self, mode_label, callback):
         self.active = True
         self.callback = callback
-        self.prompt.setText(f"Unsaved changes in {mode_label}: Y Save / D Discard / Esc Cancel")
+        self.prompt.setText(f"Unsaved changes in {mode_label}: Y Save / N Discard / Esc Cancel")
         self.prompt.show()
 
     def hide(self):
@@ -81,7 +81,7 @@ class SavePrompt:
             self.hide()
             cb("save")
             return True
-        if key in ("d", "D", "n", "N"):
+        if key in ("n", "N"):
             cb = self.callback
             self.hide()
             cb("discard")

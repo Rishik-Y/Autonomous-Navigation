@@ -100,8 +100,6 @@ class UnifiedPandaMapLauncher(ShowBase):
                 self.current_mode.save_waypoints_data()
             elif hasattr(self.current_mode, "save_elevation_data"):
                 self.current_mode.save_elevation_data()
-        elif choice == "discard":
-            self._discard_current_mode_changes()
         elif choice == "cancel":
             self.pending_switch = None
             return
@@ -109,33 +107,6 @@ class UnifiedPandaMapLauncher(ShowBase):
         if self.pending_switch is not None:
             self.switch_mode(self.pending_switch)
             self.pending_switch = None
-
-    def _discard_current_mode_changes(self):
-        mode = self.current_mode
-        if hasattr(mode, "load_map_data"):
-            mode.load_map_data()
-        if hasattr(mode, "load_config"):
-            mode.load_config()
-        if hasattr(mode, "sync_config_with_map"):
-            mode.sync_config_with_map()
-        if hasattr(mode, "load_waypoints_data"):
-            try:
-                mode.load_waypoints_data()
-            except FileNotFoundError:
-                if hasattr(mode, "generated_waypoints_map"):
-                    mode.generated_waypoints_map = {}
-        if hasattr(mode, "heightmap") and hasattr(mode.heightmap, "load_json"):
-            mode.heightmap.load_json()
-            if hasattr(mode, "_rebuild_terrain"):
-                mode._rebuild_terrain()
-        if hasattr(mode, "rebuild_splines"):
-            mode.rebuild_splines()
-        if hasattr(mode, "redraw"):
-            mode.redraw()
-        if hasattr(mode, "undo_stack"):
-            mode.undo_stack.clear()
-        if hasattr(mode, "is_dirty"):
-            mode.is_dirty = False
 
     def switch_mode(self, delta):
         self.collect_saved_files(self.current_mode)

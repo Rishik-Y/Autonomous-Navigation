@@ -1,0 +1,50 @@
+import math
+
+# --- Simulation & vehicle constants (algorithm-compatible) ---
+SIM_WINDOW_W = 1400
+SIM_WINDOW_H = 900
+ROAD_WIDTH_M = 8.0
+LANE_OFFSET_M = 2.5
+POINTS_PER_SEGMENT = 20
+
+# --- Truck geometry for Panda3D visuals ---
+CAR_LENGTH_M = 4.5
+CAR_WIDTH_M = 2.0
+CAR_HEIGHT_M = 1.8
+WHEELBASE_M = 2.8
+
+# --- Physics parameters (unchanged behavior) ---
+MASS_KG = 1500.0
+CARGO_TON = 1.0
+P_MAX_W = 80_000.0
+CD = 0.35
+FRONTAL_AREA = 2.2
+CRR = 0.01
+MAX_ACCEL_CMD = 1.0
+MAX_BRAKE_DECEL = 0.5
+SPEED_KMPH_EMPTY = 30.0
+SPEED_KMPH_LOADED = 25.0
+SPEED_MS_EMPTY = SPEED_KMPH_EMPTY / 3.6
+SPEED_MS_LOADED = SPEED_KMPH_LOADED / 3.6
+STEER_MAX_DEG = 35.0
+STEER_RATE_DEGPS = 270.0
+STEER_MAX_RAD = math.radians(STEER_MAX_DEG)
+STEER_RATE_RADPS = math.radians(STEER_RATE_DEGPS)
+JERK_LIMIT = 1.0
+LOAD_UNLOAD_TIME_S = 3.0
+SAFE_DISTANCE_M = 8.0
+ACCEL_LIMIT = 1.0
+
+# --- Controller/KF parameters ---
+LOOKAHEAD_GAIN = 0.8
+LOOKAHEAD_MIN_M = 4.0
+LOOKAHEAD_MAX_M = 15.0
+MAX_LAT_ACCEL = 2.0
+SENSOR_NOISE_STD_DEV = 0.5
+
+# --- Visual colors ---
+COLOR_EMPTY = (0.2, 0.45, 1.0, 1.0)
+COLOR_LOADING = (0.95, 0.85, 0.1, 1.0)
+COLOR_LOADED = (0.95, 0.2, 0.2, 1.0)
+COLOR_SELECTED = (1.0, 0.5, 0.1, 1.0)
+TRUCK_COLLIDE_MASK_BIT = 2

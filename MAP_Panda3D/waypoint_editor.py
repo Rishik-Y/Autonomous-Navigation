@@ -24,7 +24,7 @@ class WaypointEditorMode:
         self.redraw()
 
     def deactivate(self):
-        pass
+        self.app.renderer.clear_path_lines()
 
     def generate_all_waypoints(self):
         waypoints_data = {}

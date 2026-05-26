@@ -116,7 +116,7 @@ class WaypointViewerMode:
         self.redraw()
 
     def deactivate(self):
-        pass
+        self.app.renderer.clear_path_lines()
 
     def redraw(self):
         self.app.renderer.draw_grid()

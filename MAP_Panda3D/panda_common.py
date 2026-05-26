@@ -426,6 +426,11 @@ class SceneRenderer:
         path_np = self.path_np.attachNewNode(segs.create())
         path_np.setLightOff()
 
+    def clear_path_lines(self):
+        """Clear the yellow waypoint path lines."""
+        self.path_np.removeNode()
+        self.path_np = self.root.attachNewNode("path_lines")
+
     def _point_cloud(self, points, colors, size=7, z=NODE_Z_OFFSET):
         fmt = GeomVertexFormat.getV3c4()
         vdata = GeomVertexData("points", fmt, Geom.UHStatic)

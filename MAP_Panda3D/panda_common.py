@@ -34,7 +34,7 @@ ROAD_WIDTH_M = 8.0
 ROAD_STEEP_THRESHOLD = 8.0
 ROAD_WARNING_ALPHA = 0.35
 ROAD_WARNING_RADIUS_MULT = 1.4
-ROAD_FIXED_COLOR = (0.39, 0.39, 0.39, 1.0)
+ROAD_FIXED_COLOR = (0.1, 0.1, 0.1, 1.0)
 
 GRID_Z_OFFSET = -0.2
 ROAD_Z_OFFSET = 0.7
@@ -339,8 +339,8 @@ class SceneRenderer:
     def draw_roads(self, splines, color=(0.4, 0.4, 0.4, 1), width=2.0, z=ROAD_Z_OFFSET):
         self.road_np.removeNode()
         self.road_np = self.root.attachNewNode("roads")
-        self.road_np.setLightOff(1)
-        self.road_np.setColorScaleOff(1)
+        self.road_np.setLightOff()
+        self.road_np.setColorScale(1.0, 1.0, 1.0, 1.0)
         road_width = ROAD_WIDTH_M * (float(width) / 2.0)
         z_offset = float(z)
         fixed_color = ROAD_FIXED_COLOR
@@ -399,8 +399,8 @@ class SceneRenderer:
         gnode.addGeom(geom)
         road_np = self.road_np.attachNewNode(gnode)
         road_np.setTwoSided(True)
-        road_np.setLightOff(1)
-        road_np.setColorScaleOff(1)
+        road_np.setLightOff()
+        road_np.setColorScale(1.0, 1.0, 1.0, 1.0)
 
         warn_radius = road_width * ROAD_WARNING_RADIUS_MULT
         for x, y, zz in warnings:

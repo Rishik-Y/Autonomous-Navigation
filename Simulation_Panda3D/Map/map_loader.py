@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 import numpy as np
 
 NODES = {}
@@ -19,6 +20,18 @@ def _candidate_json_paths():
         os.path.join(_REPO_ROOT, "Simulation", "Map", "map_data.json"),
         os.path.join(_REPO_ROOT, "MAP", "Saved_Map", "map_data.json"),
     ]
+
+
+def resolve_saved_map_path(filename):
+    candidates = [
+        os.path.join(_REPO_ROOT, "MAP_Panda3D", "Saved_Map", filename),
+        os.path.join(_REPO_ROOT, "Simulation", "Map", filename),
+        os.path.join(_REPO_ROOT, "MAP", "Saved_Map", filename),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
 
 
 def load_map_data(json_file=None):
@@ -46,3 +59,19 @@ def load_map_data(json_file=None):
 
 
 load_map_data()
+
+
+def load_pickle(filename):
+    path = resolve_saved_map_path(filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{filename} not found in MAP_Panda3D/Saved_Map fallbacks")
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def load_json(filename):
+    path = resolve_saved_map_path(filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"{filename} not found in MAP_Panda3D/Saved_Map fallbacks")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)

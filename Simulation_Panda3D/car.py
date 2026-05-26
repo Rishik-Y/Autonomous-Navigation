@@ -41,11 +41,10 @@ class Car:
         self.collision_np = None
 
     def attach_visual(self, parent_np):
+        from direct.showbase.ShowBaseGlobal import base
+
         self.node = parent_np.attachNewNode(f"truck_{self.id}")
-        self.model = parent_np.getTop().getPythonTag("loader").loadModel("models/misc/rgbCube") if parent_np.getTop().hasPythonTag("loader") else None
-        if self.model is None:
-            from direct.showbase.ShowBaseGlobal import base
-            self.model = base.loader.loadModel("models/misc/rgbCube")
+        self.model = base.loader.loadModel("models/misc/rgbCube")
         self.model.reparentTo(self.node)
         self.model.setScale(CAR_LENGTH_M * 0.5, CAR_WIDTH_M * 0.5, CAR_HEIGHT_M * 0.5)
         self.model.setPos(0.0, 0.0, CAR_HEIGHT_M * 0.5)

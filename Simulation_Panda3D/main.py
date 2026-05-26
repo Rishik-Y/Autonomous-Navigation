@@ -1,7 +1,6 @@
 import json
 import math
 import os
-import pickle
 import random
 import sys
 
@@ -43,9 +42,9 @@ def _load_json_file(config_file, label):
     return None
 
 
-def load_mine_config(base_dir):
+def load_mine_config():
     config = {"truck_count": 5, "coal_capacities": {}}
-    config_file = os.path.join(base_dir, "MAP_Panda3D", "Saved_Map", "mine_config.json")
+    config_file = map_data.resolve_saved_map_path("mine_config.json")
     loaded = _load_json_file(config_file, "mine config")
     if loaded is not None:
         config["truck_count"] = loaded.get("truck_count", 5)
@@ -119,7 +118,7 @@ class PandaSimulationApp(ShowBase):
         self.disableMouse()
         self.render.setPythonTag("loader", self.loader)
 
-        self.mine_config = load_mine_config(_REPO_ROOT)
+        self.mine_config = load_mine_config()
         self.algorithm_config = load_algorithm_config()
 
         self.heightmap = Heightmap()
@@ -197,24 +196,11 @@ class PandaSimulationApp(ShowBase):
         self.truck_picker_np = self.camera.attachNewNode(cnode)
         self.truck_traverser.addCollider(self.truck_picker_np, self.truck_queue)
 
-    def _map_data_paths(self):
-        return (
-            os.path.join(_REPO_ROOT, "MAP_Panda3D", "Saved_Map", "waypoints.pkl"),
-            os.path.join(_REPO_ROOT, "MAP_Panda3D", "Saved_Map", "map_cache.pkl"),
-        )
-
     def _load_sim_data(self):
-        waypoints_filepath, cache_filename = self._map_data_paths()
-        if not os.path.exists(waypoints_filepath) or not os.path.exists(cache_filename):
-            raise FileNotFoundError("Required map cache files missing in MAP_Panda3D/Saved_Map")
-
-        with open(waypoints_filepath, "rb") as f:
-            self.waypoints_map = pickle.load(f)
-
-        with open(cache_filename, "rb") as f:
-            cache_data = pickle.load(f)
-            self.road_graph = cache_data.get("road_graph", {})
-            self.route_cache = cache_data.get("route_cache", {})
+        self.waypoints_map = map_data.load_pickle("waypoints.pkl")
+        cache_data = map_data.load_pickle("map_cache.pkl")
+        self.road_graph = cache_data.get("road_graph", {})
+        self.route_cache = cache_data.get("route_cache", {})
 
         all_terminals = set(map_data.LOAD_ZONES + map_data.DUMP_ZONES)
         incoming_map = {}

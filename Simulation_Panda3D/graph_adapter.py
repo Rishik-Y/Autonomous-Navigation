@@ -5,7 +5,9 @@ import math
 from config import POINTS_PER_SEGMENT
 
 class GraphAdapter:
-    def __init__(self, map_cache_path='Map/map_cache.pkl', waypoints_path='Map/waypoints.pkl'):
+    def __init__(self, map_cache_path=None, waypoints_path=None):
+        map_cache_path = map_cache_path or map_data.resolve_saved_map_path('map_cache.pkl')
+        waypoints_path = waypoints_path or map_data.resolve_saved_map_path('waypoints.pkl')
         self.road_graph = {}
         self.route_cache = {}
         self.waypoints_map = {}

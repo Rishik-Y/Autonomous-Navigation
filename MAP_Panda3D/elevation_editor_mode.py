@@ -211,6 +211,7 @@ class ElevationEditorMode:
 
         if self.edit_mode == "0":
             source = self.heightmap.data.copy()
+            cells_set = set(cells)
             updates = []
             for c, r in cells:
                 h = int(source[r, c])
@@ -223,8 +224,9 @@ class ElevationEditorMode:
                         nc = c + dc
                         nr = r + dr
                         if 0 <= nc < self.heightmap.cols and 0 <= nr < self.heightmap.rows:
-                            total += float(source[nr, nc])
-                            count += 1
+                            if (nc, nr) not in cells_set:
+                                total += float(source[nr, nc])
+                                count += 1
                 if count == 0:
                     continue
                 avg = total / float(count)

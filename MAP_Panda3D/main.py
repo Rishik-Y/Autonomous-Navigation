@@ -64,6 +64,8 @@ class UnifiedPandaMapLauncher(ShowBase):
         for key in "abcdefghijklmnopqrstuvwxyz":
             self.accept(key, self.handle_key, [key])
             self.accept(key.upper(), self.handle_key, [key.upper()])
+        for key in "0123456789":
+            self.accept(key, self.handle_key, [key])
         for key in ["+", "=", "-", "space"]:
             self.accept(key, self.handle_key, [key])
 

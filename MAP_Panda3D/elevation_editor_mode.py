@@ -82,7 +82,6 @@ class ElevationEditorMode:
         self.status_text = ""
         self.base_status = ""
         self._saved_files = []
-        self.undo_stack = []
         self.highlight = BrushHighlight(self.app.renderer.root, self.heightmap.cell_size)
         self._update_base_status()
 
@@ -94,13 +93,11 @@ class ElevationEditorMode:
         self._update_base_status()
         self.redraw()
         self.app.accept("control-s", self._save)
-        self.app.accept("control-z", self._undo)
         self.app.accept("shift-=", self._increase_brush)
         self.app.accept("shift--", self._decrease_brush)
 
     def deactivate(self):
         self.app.ignore("control-s")
-        self.app.ignore("control-z")
         self.app.ignore("shift-=")
         self.app.ignore("shift--")
         self.highlight.hide()
@@ -150,15 +147,13 @@ class ElevationEditorMode:
         elif key in ("0", "3"):
             self.edit_mode = "0"
             self._update_base_status()
-        elif key in ("z", "Z"):
-            self._undo()
+        elif key in ("l", "L"):
+            self._load()
         elif key in ("s", "S"):
             self._save()
 
     def on_mouse1(self, down=True):
         if down:
-            if not self.clicking and self.hovered_cell:
-                self.undo_stack.append(self.app.heightmap.data.copy())
             self.clicking = True
             self.last_edit = None
             if self.hovered_cell:
@@ -208,51 +203,36 @@ class ElevationEditorMode:
         elif self.edit_mode == "-":
             self.heightmap.set(col, row, h - 1)
         elif self.edit_mode == "0":
-            total = 0
-            count = 0
-            for dc in (-1, 0, 1):
-                for dr in (-1, 0, 1):
-                    if dc == 0 and dr == 0:
-                        continue
-                    nc = col + dc
-                    nr = row + dr
-                    if 0 <= nc < self.heightmap.cols and 0 <= nr < self.heightmap.rows:
-                        total += self.heightmap.get(nc, nr)
-                        count += 1
-            if count == 0:
-                return
-            avg = total / float(count)
-            if h < avg:
-                self.heightmap.set(col, row, h + 1)
-            elif h > avg:
+            if h > 0:
                 self.heightmap.set(col, row, h - 1)
+            elif h < 0:
+                self.heightmap.set(col, row, h + 1)
 
     def _rebuild_terrain(self):
         self.app.renderer.draw_terrain()
         self.app.renderer.draw_grid()
 
-    def _undo(self):
-        if not self.undo_stack:
-            return
-        self.app.heightmap.data = self.undo_stack.pop()
-        self.is_dirty = bool(self.undo_stack)
-        self._rebuild_terrain()
-        self._update_status()
-
     def _save(self):
         path = self.heightmap.save_json()
         self._saved_files.append(os.path.basename(path))
         self.is_dirty = False
-        self.undo_stack.clear()
         session_tracker.mark_save_occurred()
         self._update_base_status(extra=f"Saved to {os.path.basename(path)}")
 
     def save_elevation_data(self):
         self._save()
 
+    def _load(self):
+        if self.heightmap.load_json():
+            self.is_dirty = False
+            self._rebuild_terrain()
+            self._update_base_status(extra="Loaded elevation data")
+        else:
+            self._update_base_status(extra="No saved elevation data found")
+
     @property
     def controls_text(self):
         return (
             "[+/1] Raise | [-/2] Lower | [0/3] Level | [Shift +/-] Brush Size | "
-            "[Click] Edit | [S] Save | [Z/Ctrl+Z] Undo\nArrow keys pan | RMB orbit | Scroll zoom"
+            "[Click] Edit | [S] Save | [L] Load\nArrow keys pan | RMB orbit | Scroll zoom"
         )

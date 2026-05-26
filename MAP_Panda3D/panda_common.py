@@ -17,14 +17,11 @@ from panda3d.core import (
     GeomVertexData,
     GeomVertexFormat,
     GeomVertexWriter,
-    GeomTriangles,
     DirectionalLight,
     AmbientLight,
     LColor,
     LineSegs,
     Point3,
-    Vec3,
-    TransparencyAttrib,
 )
 
 from panda_elevation import Heightmap, TerrainMesh
@@ -36,8 +33,6 @@ ROAD_WIDTH_M = 8.0
 GRID_Z_OFFSET = -0.2
 ROAD_Z_OFFSET = 0.7
 NODE_Z_OFFSET = 0.6
-ROAD_STEEP_GRADE_LIMIT = 0.75
-ROAD_CROSS_GRADE_LIMIT = 0.55
 
 
 def catmull_rom_point(t, p0, p1, p2, p3):
@@ -285,117 +280,24 @@ class SceneRenderer:
     def draw_roads(self, splines, color=(0.4, 0.4, 0.4, 1), width=2.0, z=ROAD_Z_OFFSET):
         self.road_np.removeNode()
         self.road_np = self.root.attachNewNode("roads")
-        road_width_m = max(ROAD_WIDTH_M * (float(width) / 2.0), ROAD_WIDTH_M * 0.5)
-        half_width = road_width_m * 0.5
+        segs = LineSegs("roads")
+        segs.setColor(*color)
+        segs.setThickness(width)
 
         for waypoints in splines:
             if len(waypoints) < 2:
                 continue
+            x0 = float(waypoints[0][0])
+            y0 = float(waypoints[0][1])
+            z0 = self.terrain_elevation(x0, y0) + float(z)
+            segs.moveTo(x0, y0, z0)
+            for p in waypoints[1:]:
+                x = float(p[0])
+                y = float(p[1])
+                zz = self.terrain_elevation(x, y) + float(z)
+                segs.drawTo(x, y, zz)
 
-            centers = [np.array([float(p[0]), float(p[1])], dtype=float) for p in waypoints]
-            left_xyz = []
-            right_xyz = []
-            flattened_segments = []
-
-            for i, center in enumerate(centers):
-                if i == 0:
-                    tangent = centers[1] - centers[0]
-                elif i == len(centers) - 1:
-                    tangent = centers[-1] - centers[-2]
-                else:
-                    tangent = centers[i + 1] - centers[i - 1]
-
-                tlen = float(np.linalg.norm(tangent))
-                if tlen < 1e-6:
-                    tangent = np.array([1.0, 0.0], dtype=float)
-                else:
-                    tangent = tangent / tlen
-
-                normal = np.array([-tangent[1], tangent[0]], dtype=float)
-                left_xy = center + normal * half_width
-                right_xy = center - normal * half_width
-
-                center_z = self.terrain_elevation(center[0], center[1]) + float(z)
-                left_z = self.terrain_elevation(left_xy[0], left_xy[1]) + float(z)
-                right_z = self.terrain_elevation(right_xy[0], right_xy[1]) + float(z)
-
-                if i > 0:
-                    prev_center = centers[i - 1]
-                    run = float(np.linalg.norm(center - prev_center))
-                    run = max(run, 1e-3)
-
-                    prev_left = left_xyz[-1]
-                    prev_right = right_xyz[-1]
-                    left_grade = abs(left_z - prev_left[2]) / run
-                    right_grade = abs(right_z - prev_right[2]) / run
-                    cross_grade = abs(left_z - right_z) / max(road_width_m, 1e-3)
-
-                    if (
-                        left_grade > ROAD_STEEP_GRADE_LIMIT
-                        or right_grade > ROAD_STEEP_GRADE_LIMIT
-                        or cross_grade > ROAD_CROSS_GRADE_LIMIT
-                    ):
-                        flat_z = prev_left[2] + (prev_right[2] - prev_left[2]) * 0.5
-                        center_z = flat_z
-                        left_z = flat_z
-                        right_z = flat_z
-                        flattened_segments.append((centers[i - 1] + center) * 0.5)
-
-                left_xyz.append((left_xy[0], left_xy[1], left_z))
-                right_xyz.append((right_xy[0], right_xy[1], right_z))
-
-            if len(left_xyz) < 2:
-                continue
-
-            fmt = GeomVertexFormat.getV3n3c4()
-            vdata = GeomVertexData("road_ribbon", fmt, Geom.UHDynamic)
-            vdata.setNumRows(len(left_xyz) * 2)
-            vw = GeomVertexWriter(vdata, "vertex")
-            nw = GeomVertexWriter(vdata, "normal")
-            cw = GeomVertexWriter(vdata, "color")
-
-            for left, right in zip(left_xyz, right_xyz):
-                lw = np.array(left, dtype=float)
-                rw = np.array(right, dtype=float)
-                edge = rw - lw
-                normal = Vec3(-edge[1], edge[0], edge[0] * edge[0] + edge[1] * edge[1])
-                if normal.lengthSquared() < 1e-6:
-                    normal = Vec3(0, 0, 1)
-                else:
-                    normal.normalize()
-
-                vw.addData3f(*left)
-                nw.addData3f(normal)
-                cw.addData4f(*color)
-
-                vw.addData3f(*right)
-                nw.addData3f(normal)
-                cw.addData4f(*color)
-
-            tris = GeomTriangles(Geom.UHDynamic)
-            for i in range(len(left_xyz) - 1):
-                i0 = i * 2
-                i1 = i0 + 1
-                i2 = i0 + 2
-                i3 = i0 + 3
-                tris.addVertices(i0, i1, i2)
-                tris.addVertices(i1, i3, i2)
-            tris.closePrimitive()
-
-            geom = Geom(vdata)
-            geom.addPrimitive(tris)
-            node = GeomNode("road_ribbon")
-            node.addGeom(geom)
-            road_geom_np = self.road_np.attachNewNode(node)
-            road_geom_np.setTwoSided(True)
-
-            for midpoint in flattened_segments:
-                zone_z = self.terrain_elevation(midpoint[0], midpoint[1]) + float(z) + 2.0
-                zone = self._sphere_model.copyTo(self.road_np)
-                zone.setPos(float(midpoint[0]), float(midpoint[1]), float(zone_z))
-                zone.setScale(max(road_width_m * 0.65, ROAD_WIDTH_M))
-                zone.setColor(1.0, 0.0, 0.0, 0.35)
-                zone.setTransparency(TransparencyAttrib.MAlpha)
+        self.road_np.attachNewNode(segs.create())
 
     def _point_cloud(self, points, colors, size=7, z=NODE_Z_OFFSET):
         fmt = GeomVertexFormat.getV3c4()

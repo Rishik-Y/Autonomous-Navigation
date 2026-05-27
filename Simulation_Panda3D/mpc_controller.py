@@ -39,6 +39,7 @@ class MPCController:
         self.BARRIER_WEIGHT = 1000.0
         self.BARRIER_ACTIVATION_RATIO = 0.5
         self.BARRIER_STEEPNESS = 2.0
+        self.BARRIER_STEEPNESS_SQ = self.BARRIER_STEEPNESS ** 2
 
         # --- Constraints ---
         self.MAX_ACCEL = MAX_ACCEL_CMD
@@ -79,7 +80,7 @@ class MPCController:
         c = np.cos(theta_ref)
         s = np.sin(theta_ref)
 
-        R = np.array(
+        R_mat = np.array(
             [
                 [c, s, 0, 0],
                 [-s, c, 0, 0],
@@ -88,7 +89,7 @@ class MPCController:
             ]
         )
 
-        return R.T @ Q_base @ R
+        return R_mat.T @ Q_base @ R_mat
 
     # ------------------------------------------------------------------
     # Dynamics
@@ -244,7 +245,7 @@ class MPCController:
 
             d2C_de2 = (
                 self.BARRIER_WEIGHT
-                * (self.BARRIER_STEEPNESS ** 2)
+                * self.BARRIER_STEEPNESS_SQ
                 * exp_term
             )
             hess[0, 0] += d2C_de2 * (de_dx * de_dx)

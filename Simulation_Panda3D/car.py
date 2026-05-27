@@ -56,7 +56,7 @@ class Car:
 
     def _sample_terrain_pose(self, heightmap):
         if heightmap is None:
-            return 0.0, 0.0, 0.0
+            return 0.0, 0.0, 0.0, 0.0, 0.0
 
         heading_x = math.cos(self.angle)
         heading_y = math.sin(self.angle)
@@ -85,7 +85,7 @@ class Car:
 
         pitch = math.atan2(z_front - z_rear, WHEELBASE_M)
         roll = math.atan2(z_right - z_left, TRACK_WIDTH_M)
-        return z_center, pitch, roll
+        return z_center, pitch, roll, z_front, z_rear
 
     def attach_visual(self, parent_np):
         from direct.showbase.ShowBaseGlobal import base
@@ -93,7 +93,7 @@ class Car:
         self.node = parent_np.attachNewNode(f"truck_{self.id}")
         self.model = base.loader.loadModel("models/misc/rgbCube")
         self.model.reparentTo(self.node)
-        self.model.setScale(CAR_LENGTH_M * 0.5, CAR_WIDTH_M * 0.5, CAR_HEIGHT_M * 0.5)
+        self.model.setScale(CAR_WIDTH_M * 0.5, CAR_LENGTH_M * 0.5, CAR_HEIGHT_M * 0.5)
         self.model.setPos(0.0, 0.0, CAR_HEIGHT_M * 0.5)
 
         cnode = CollisionNode(f"truck_col_{self.id}")
@@ -117,10 +117,18 @@ class Car:
         if not self.node:
             return
         self.heightmap = heightmap
-        z, self.pitch_rad, self.roll_rad = self._sample_terrain_pose(heightmap)
-        self.node.setPos(float(self.x_m), float(self.y_m), z)
+        z_center, self.pitch_rad, self.roll_rad, z_front, z_rear = self._sample_terrain_pose(heightmap)
+        
+        # Calculate anti-clipping Z (average of front and rear wheels + 0.2m tire/suspension clearance)
+        z_actual = ((z_front + z_rear) / 2.0) + 0.2
+        
+        self.node.setPos(float(self.x_m), float(self.y_m), z_actual)
+        
+        # Offset heading by -90 degrees to align Y-Forward model with 2D +X movement vector
+        heading_deg = math.degrees(self.angle) - 90.0
+        
         self.node.setHpr(
-            math.degrees(self.angle),
+            heading_deg,
             math.degrees(self.pitch_rad),
             math.degrees(self.roll_rad),
         )
@@ -315,12 +323,30 @@ class Car:
         accel_cmd = self.a_cmd_prev + accel_diff
         self.a_cmd_prev = accel_cmd
 
-        _, self.pitch_rad, self.roll_rad = self._sample_terrain_pose(self.heightmap)
+        # Sample terrain to get pitch and roll angles
+        _, self.pitch_rad, self.roll_rad, _, _ = self._sample_terrain_pose(self.heightmap)
 
-        requested_force = self.current_mass_kg * accel_cmd
-        traction_request = max(0.0, requested_force)
-        brake_request = max(0.0, -requested_force)
+        # Calculate resistive forces FIRST
+        gravity_force = gravity_force_along_slope(self.current_mass_kg, self.pitch_rad)
+        rolling_force = rolling_resistance_force(self.current_mass_kg, self.pitch_rad)
+        drag_force = aerodynamic_drag_force(self.speed_ms)
 
+        # What net force is the MPC actually asking for?
+        desired_net_force = self.current_mass_kg * accel_cmd
+
+        # Calculate how much engine/brake force is required to achieve that net force
+        # F_engine_net - Resistances = desired_net_force
+        # F_engine_net = desired_net_force + Resistances
+        required_engine_force = desired_net_force + gravity_force + rolling_force + drag_force
+
+        if required_engine_force > 0:
+            traction_request = required_engine_force
+            brake_request = 0.0
+        else:
+            traction_request = 0.0
+            brake_request = -required_engine_force
+
+        # Clamp to physical limits
         traction_limit = max_traction_force(self.speed_ms, power_w=P_MAX_W)
         brake_limit = max_brake_force(self.current_mass_kg)
 
@@ -328,13 +354,11 @@ class Car:
         brake_force = min(brake_request, brake_limit)
         self.power_limited = traction_request > traction_limit + 1e-6
 
-        gravity_force = gravity_force_along_slope(self.current_mass_kg, self.pitch_rad)
-        rolling_force = rolling_resistance_force(self.current_mass_kg, self.pitch_rad)
-        drag_force = aerodynamic_drag_force(self.speed_ms)
-
+        # Apply final net acceleration
         net_force = traction_force - brake_force - gravity_force - rolling_force - drag_force
         self.accel_ms2 = net_force / max(self.current_mass_kg, 1e-6)
         self.speed_ms = max(0.0, self.speed_ms + self.accel_ms2 * dt)
+        self.speed_ms = min(self.speed_ms, SPEED_MS_EMPTY)
 
         self.throttle_pct = 100.0 * (traction_force / max(traction_limit, 1e-6)) if traction_force > 0.0 else 0.0
         self.brake_pct = 100.0 * (brake_force / max(brake_limit, 1e-6)) if brake_force > 0.0 else 0.0

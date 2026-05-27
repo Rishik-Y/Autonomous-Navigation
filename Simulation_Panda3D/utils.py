@@ -1,13 +1,71 @@
-import numpy as np
 import heapq
+import math
+
+import numpy as np
 from config import *
 
 # --- Physics Functions ---
-def resist_forces(v_ms: float, mass_kg: float) -> float:
-    return CRR * mass_kg * 9.81 + 0.5 * 1.225 * CD * FRONTAL_AREA * v_ms**2
+def aerodynamic_drag_force(v_ms: float) -> float:
+    return 0.5 * 1.225 * CD * FRONTAL_AREA * max(v_ms, 0.0) ** 2
+
+
+def gravity_force_along_slope(mass_kg: float, pitch_rad: float) -> float:
+    return mass_kg * 9.81 * math.sin(pitch_rad)
+
+
+def rolling_resistance_force(mass_kg: float, pitch_rad: float) -> float:
+    return CRR * mass_kg * 9.81 * max(0.0, math.cos(pitch_rad))
+
+
+def resist_forces(v_ms: float, mass_kg: float, pitch_rad: float = 0.0) -> float:
+    return (
+        gravity_force_along_slope(mass_kg, pitch_rad)
+        + rolling_resistance_force(mass_kg, pitch_rad)
+        + aerodynamic_drag_force(v_ms)
+    )
+
 
 def traction_force_from_power(v_ms: float, throttle: float) -> float:
     return (P_MAX_W * np.clip(throttle, 0, 1)) / max(v_ms, 0.5)
+
+
+def max_traction_force(v_ms: float, power_w: float = P_MAX_W) -> float:
+    return power_w / max(v_ms, 0.5)
+
+
+def max_brake_force(mass_kg: float) -> float:
+    return mass_kg * MAX_BRAKE_DECEL
+
+
+def estimate_max_uphill_speed_ms(
+    pitch_rad: float,
+    mass_kg: float,
+    power_w: float = P_MAX_W,
+    v_min: float = 0.5,
+    v_max: float = 45.0,
+) -> float:
+    gravity = gravity_force_along_slope(mass_kg, pitch_rad)
+    rolling = rolling_resistance_force(mass_kg, pitch_rad)
+
+    if gravity <= 0.0:
+        return v_max
+
+    def margin(v):
+        return (power_w / max(v, v_min)) - (gravity + rolling + aerodynamic_drag_force(v))
+
+    if margin(v_min) <= 0.0:
+        return v_min
+    if margin(v_max) >= 0.0:
+        return v_max
+
+    lo, hi = v_min, v_max
+    for _ in range(UPHILL_SOLVER_BISECTION_ITERS):
+        mid = 0.5 * (lo + hi)
+        if margin(mid) >= 0.0:
+            lo = mid
+        else:
+            hi = mid
+    return lo
 
 def brake_force_from_command(brake_cmd: float, mass_kg: float) -> float:
     return np.clip(brake_cmd, 0, 1) * mass_kg * MAX_BRAKE_DECEL

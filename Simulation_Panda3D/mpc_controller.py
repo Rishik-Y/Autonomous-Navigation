@@ -71,7 +71,11 @@ class MPCController:
         return (angle + np.pi) % (2 * np.pi) - np.pi
 
     def get_rotated_Q(self, theta_ref, Q_base):
-        """Rotates the Frenet Q matrix into the global X/Y frame."""
+        """Return global-frame Q from Frenet-frame costs.
+
+        theta_ref : reference heading angle (rad)
+        Q_base    : Frenet-frame cost matrix
+        """
         c = np.cos(theta_ref)
         s = np.sin(theta_ref)
 
@@ -222,13 +226,14 @@ class MPCController:
         safe_threshold = self.LANE_MARGIN * self.BARRIER_ACTIVATION_RATIO
         if abs(e_lat) > safe_threshold:
             overshoot = abs(e_lat) - safe_threshold
-            barrier_val = np.exp(overshoot * self.BARRIER_STEEPNESS) - 1.0
+            exp_term = np.exp(overshoot * self.BARRIER_STEEPNESS)
+            barrier_val = exp_term - 1.0
             cost += self.BARRIER_WEIGHT * barrier_val
 
             dC_de = (
                 self.BARRIER_WEIGHT
                 * self.BARRIER_STEEPNESS
-                * np.exp(overshoot * self.BARRIER_STEEPNESS)
+                * exp_term
                 * np.sign(e_lat)
             )
             de_dx = -np.sin(theta_ref)
@@ -240,7 +245,7 @@ class MPCController:
             d2C_de2 = (
                 self.BARRIER_WEIGHT
                 * (self.BARRIER_STEEPNESS ** 2)
-                * np.exp(overshoot * self.BARRIER_STEEPNESS)
+                * exp_term
             )
             hess[0, 0] += d2C_de2 * (de_dx * de_dx)
             hess[1, 1] += d2C_de2 * (de_dy * de_dy)

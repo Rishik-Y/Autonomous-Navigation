@@ -80,7 +80,7 @@ class MPCController:
         c = np.cos(theta_ref)
         s = np.sin(theta_ref)
 
-        R_mat = np.array(
+        rotation_mat = np.array(
             [
                 [c, s, 0, 0],
                 [-s, c, 0, 0],
@@ -89,7 +89,7 @@ class MPCController:
             ]
         )
 
-        return R_mat.T @ Q_base @ R_mat
+        return rotation_mat.T @ Q_base @ rotation_mat
 
     # ------------------------------------------------------------------
     # Dynamics

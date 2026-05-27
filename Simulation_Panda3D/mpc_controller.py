@@ -35,8 +35,10 @@ class MPCController:
         self.R_rate = np.diag([3.0, 50.0])
 
         # Road boundary barrier
-        self.LANE_MARGIN = 2.0  # meters before hitting the edge of lane/oncoming
+        self.LANE_MARGIN = 2.0  # total lateral margin before lane edge/oncoming
         self.BARRIER_WEIGHT = 1000.0
+        self.BARRIER_ACTIVATION_RATIO = 0.5
+        self.BARRIER_STEEPNESS = 2.0
 
         # --- Constraints ---
         self.MAX_ACCEL = MAX_ACCEL_CMD
@@ -217,16 +219,16 @@ class MPCController:
         grad = np.zeros(4)
         hess = np.zeros((4, 4))
 
-        safe_threshold = self.LANE_MARGIN * 0.5
+        safe_threshold = self.LANE_MARGIN * self.BARRIER_ACTIVATION_RATIO
         if abs(e_lat) > safe_threshold:
             overshoot = abs(e_lat) - safe_threshold
-            barrier_val = np.exp(overshoot * 2.0) - 1.0
+            barrier_val = np.exp(overshoot * self.BARRIER_STEEPNESS) - 1.0
             cost += self.BARRIER_WEIGHT * barrier_val
 
             dC_de = (
                 self.BARRIER_WEIGHT
-                * 2.0
-                * np.exp(overshoot * 2.0)
+                * self.BARRIER_STEEPNESS
+                * np.exp(overshoot * self.BARRIER_STEEPNESS)
                 * np.sign(e_lat)
             )
             de_dx = -np.sin(theta_ref)
@@ -235,9 +237,13 @@ class MPCController:
             grad[0] += dC_de * de_dx
             grad[1] += dC_de * de_dy
 
-            d2C_de2 = self.BARRIER_WEIGHT * 4.0 * np.exp(overshoot * 2.0)
-            hess[0, 0] += d2C_de2 * (de_dx ** 2)
-            hess[1, 1] += d2C_de2 * (de_dy ** 2)
+            d2C_de2 = (
+                self.BARRIER_WEIGHT
+                * (self.BARRIER_STEEPNESS ** 2)
+                * np.exp(overshoot * self.BARRIER_STEEPNESS)
+            )
+            hess[0, 0] += d2C_de2 * (de_dx * de_dx)
+            hess[1, 1] += d2C_de2 * (de_dy * de_dy)
             hess[0, 1] += d2C_de2 * de_dx * de_dy
             hess[1, 0] += d2C_de2 * de_dx * de_dy
 

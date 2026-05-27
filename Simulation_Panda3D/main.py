@@ -422,7 +422,7 @@ class PandaSimulationApp(ShowBase):
                         kf.x[3] = 0.0
                         car.run_mpc([], other_cars=self.cars)
                 else:
-                    car.move(sim_dt)
+                    car.move(sim_dt, self.heightmap)
 
                 accel_vec_m = np.array([
                     car.accel_ms2 * math.cos(car.angle),

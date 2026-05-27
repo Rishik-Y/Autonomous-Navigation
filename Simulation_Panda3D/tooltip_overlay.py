@@ -45,11 +45,20 @@ def build_entity_tooltip(entity_type, data):
     if entity_type == "truck":
         car = data["car"]
         current_cargo = max(0.0, car.current_mass_kg - MASS_KG)
+        if car.brake_pct > 0.1:
+            power_line = f"Brake: {car.brake_pct:.0f}%"
+        else:
+            limited_suffix = " (Power Limited)" if car.power_limited and car.throttle_pct > 0.1 else ""
+            power_line = f"Throttle: {car.throttle_pct:.0f}%{limited_suffix}"
         return (
             f"Truck {car.id}\n"
             f"State: {car.op_state}\n"
             f"Target: {car.target_node_name or '-'}\n"
-            f"Cargo: {int(current_cargo)}/{int(CARGO_TON * 1000)} kg"
+            f"Cargo: {int(current_cargo)}/{int(CARGO_TON * 1000)} kg\n"
+            f"Weight: {int(car.current_mass_kg):,} kg\n"
+            f"Pitch: {np.degrees(car.pitch_rad):+.1f}°\n"
+            f"Roll: {np.degrees(car.roll_rad):+.1f}°\n"
+            f"{power_line}"
         )
 
     if entity_type == "coal_mine":

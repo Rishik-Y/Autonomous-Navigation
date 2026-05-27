@@ -1,6 +1,8 @@
 import numpy as np
 import math
 
+from config import MAX_ACCEL_CMD, MAX_BRAKE_DECEL, STEER_MAX_RAD
+
 
 class MPCController:
     """
@@ -33,8 +35,9 @@ class MPCController:
         self.Q_terminal = self.Q * 5.0
 
         # --- Constraints ---
-        self.MAX_ACCEL = 1.5
-        self.MAX_STEER = np.radians(35)
+        self.MAX_ACCEL = MAX_ACCEL_CMD
+        self.MAX_BRAKE = MAX_BRAKE_DECEL
+        self.MAX_STEER = STEER_MAX_RAD
         self.MAX_SPEED = 15.0   # m/s (~54 km/h)
         self.MIN_SPEED = 0.0
 
@@ -201,7 +204,7 @@ class MPCController:
         U[-1] = self.prev_u[-1]
 
         # Clamp warm-start controls
-        U[:, 0] = np.clip(U[:, 0], -self.MAX_ACCEL, self.MAX_ACCEL)
+        U[:, 0] = np.clip(U[:, 0], -self.MAX_BRAKE, self.MAX_ACCEL)
         U[:, 1] = np.clip(U[:, 1], -self.MAX_STEER, self.MAX_STEER)
 
         # Initial rollout
@@ -301,7 +304,7 @@ class MPCController:
                     u_cand = U[k] + du
 
                     # Constraints
-                    u_cand[0] = np.clip(u_cand[0], -self.MAX_ACCEL, self.MAX_ACCEL)
+                    u_cand[0] = np.clip(u_cand[0], -self.MAX_BRAKE, self.MAX_ACCEL)
                     u_cand[1] = np.clip(u_cand[1], -self.MAX_STEER, self.MAX_STEER)
 
                     U_new[k] = u_cand

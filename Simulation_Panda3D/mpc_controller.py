@@ -35,7 +35,7 @@ class MPCController:
         self.R_rate = np.diag([3.0, 50.0])
 
         # Road boundary barrier
-        self.LANE_MARGIN = 2.0  # total lateral margin before lane edge/oncoming
+        self.LANE_MARGIN = 2.0  # one-sided max lateral deviation from centerline
         self.BARRIER_WEIGHT = 1000.0
         self.BARRIER_ACTIVATION_RATIO = 0.5
         self.BARRIER_STEEPNESS = 2.0
@@ -250,8 +250,9 @@ class MPCController:
             )
             hess[0, 0] += d2C_de2 * (de_dx * de_dx)
             hess[1, 1] += d2C_de2 * (de_dy * de_dy)
-            hess[0, 1] += d2C_de2 * de_dx * de_dy
-            hess[1, 0] += d2C_de2 * de_dx * de_dy
+            de_dx_dy = de_dx * de_dy
+            hess[0, 1] += d2C_de2 * de_dx_dy
+            hess[1, 0] += d2C_de2 * de_dx_dy
 
         return cost, grad, hess
 

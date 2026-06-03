@@ -25,14 +25,21 @@ class MPCController:
         self.d_safe = d_safe
 
         # --- Tuning Weights ---
-        # [x, y, theta, v]
-        self.Q = np.diag([10.0, 10.0, 20.0, 4.0])
+        # [e_long, e_lat, e_theta, e_v]
+        # Low penalty for falling behind (e_long), high penalty for lane drift (e_lat)
+        self.Q_frenet = np.diag([0.5, 50.0, 20.0, 4.0])
+        self.Q_terminal_frenet = self.Q_frenet * 5.0
         # [accel, steer]
         self.R = np.diag([0.5, 2.0])
         # [d_accel, d_steer] – smooth inputs, heavy steer-rate penalty
         self.R_rate = np.diag([3.0, 50.0])
-        # Terminal cost
-        self.Q_terminal = self.Q * 5.0
+
+        # Road boundary barrier
+        self.LANE_MARGIN = 2.0  # one-sided max lateral deviation from centerline
+        self.BARRIER_WEIGHT = 1000.0
+        self.BARRIER_ACTIVATION_RATIO = 0.5
+        self.BARRIER_STEEPNESS = 2.0
+        self.BARRIER_STEEPNESS_SQ = self.BARRIER_STEEPNESS ** 2
 
         # --- Constraints ---
         self.MAX_ACCEL = MAX_ACCEL_CMD
@@ -63,6 +70,26 @@ class MPCController:
     @staticmethod
     def normalize_angle(angle):
         return (angle + np.pi) % (2 * np.pi) - np.pi
+
+    def get_rotated_Q(self, theta_ref, Q_base):
+        """Return global-frame Q from Frenet-frame costs.
+
+        theta_ref : reference heading angle (rad)
+        Q_base    : Frenet-frame cost matrix
+        """
+        c = np.cos(theta_ref)
+        s = np.sin(theta_ref)
+
+        rotation_mat = np.array(
+            [
+                [c, s, 0, 0],
+                [-s, c, 0, 0],
+                [0, 0, 1, 0],
+                [0, 0, 0, 1],
+            ]
+        )
+
+        return rotation_mat.T @ Q_base @ rotation_mat
 
     # ------------------------------------------------------------------
     # Dynamics
@@ -184,6 +211,51 @@ class MPCController:
 
         return cost, grad, hess
 
+    def _boundary_cost_and_grad(self, x, ref_k_state):
+        """Applies an exponential barrier if cross-track error gets too high."""
+        dx = x[0] - ref_k_state[0]
+        dy = x[1] - ref_k_state[1]
+        theta_ref = ref_k_state[2]
+
+        # Cross-track error in reference frame
+        e_lat = -dx * np.sin(theta_ref) + dy * np.cos(theta_ref)
+
+        cost = 0.0
+        grad = np.zeros(4)
+        hess = np.zeros((4, 4))
+
+        safe_threshold = self.LANE_MARGIN * self.BARRIER_ACTIVATION_RATIO
+        if abs(e_lat) > safe_threshold:
+            overshoot = abs(e_lat) - safe_threshold
+            exp_term = np.exp(overshoot * self.BARRIER_STEEPNESS)
+            barrier_val = exp_term - 1.0
+            cost += self.BARRIER_WEIGHT * barrier_val
+
+            dC_de = (
+                self.BARRIER_WEIGHT
+                * self.BARRIER_STEEPNESS
+                * exp_term
+                * np.sign(e_lat)
+            )
+            de_dx = -np.sin(theta_ref)
+            de_dy = np.cos(theta_ref)
+
+            grad[0] += dC_de * de_dx
+            grad[1] += dC_de * de_dy
+
+            d2C_de2 = (
+                self.BARRIER_WEIGHT
+                * self.BARRIER_STEEPNESS_SQ
+                * exp_term
+            )
+            hess[0, 0] += d2C_de2 * (de_dx * de_dx)
+            hess[1, 1] += d2C_de2 * (de_dy * de_dy)
+            de_dx_dy = de_dx * de_dy
+            hess[0, 1] += d2C_de2 * de_dx_dy
+            hess[1, 0] += d2C_de2 * de_dx_dy
+
+        return cost, grad, hess
+
     # ------------------------------------------------------------------
     # iLQR Solver
     # ------------------------------------------------------------------
@@ -223,10 +295,17 @@ class MPCController:
             backward_ok = True
 
             # Terminal cost
-            dx = X[N] - ref_traj[:, min(N, ref_traj.shape[1] - 1)]
+            ref_N = min(N, ref_traj.shape[1] - 1)
+            dx = X[N] - ref_traj[:, ref_N]
             dx[2] = self.normalize_angle(dx[2])
-            Vx = 2.0 * self.Q_terminal @ dx
-            Vxx = 2.0 * self.Q_terminal.copy()
+            theta_ref = ref_traj[2, ref_N]
+            Q_terminal_global = self.get_rotated_Q(theta_ref, self.Q_terminal_frenet)
+            Vx = 2.0 * Q_terminal_global @ dx
+            Vxx = 2.0 * Q_terminal_global.copy()
+
+            _, b_grad, b_hess = self._boundary_cost_and_grad(X[N], ref_traj[:, ref_N])
+            Vx += b_grad
+            Vxx += b_hess
 
             for k in range(N - 1, -1, -1):
                 A, B = self.get_dynamics_jacobians(X[k], U[k])
@@ -235,8 +314,11 @@ class MPCController:
                 dx = X[k] - ref_traj[:, ref_k]
                 dx[2] = self.normalize_angle(dx[2])
 
-                lx = 2.0 * self.Q @ dx
-                lxx = 2.0 * self.Q.copy()
+                theta_ref = ref_traj[2, ref_k]
+                Q_global = self.get_rotated_Q(theta_ref, self.Q_frenet)
+
+                lx = 2.0 * Q_global @ dx
+                lxx = 2.0 * Q_global.copy()
 
                 lu = 2.0 * self.R @ U[k]
                 luu = 2.0 * self.R.copy()
@@ -253,6 +335,12 @@ class MPCController:
                 )
                 lx += coll_grad
                 lxx += coll_hess
+
+                _, b_grad, b_hess = self._boundary_cost_and_grad(
+                    X[k], ref_traj[:, ref_k]
+                )
+                lx += b_grad
+                lxx += b_hess
 
                 # Q-function
                 Qx = lx + A.T @ Vx
@@ -347,7 +435,9 @@ class MPCController:
             ref_k = min(k, ref_traj.shape[1] - 1)
             err = X[k] - ref_traj[:, ref_k]
             err[2] = self.normalize_angle(err[2])
-            J += err @ self.Q @ err
+            theta_ref = ref_traj[2, ref_k]
+            Q_global = self.get_rotated_Q(theta_ref, self.Q_frenet)
+            J += err @ Q_global @ err
             J += U[k] @ self.R @ U[k]
 
             if k > 0:
@@ -359,9 +449,16 @@ class MPCController:
             )
             J += c_cost
 
+            b_cost, _, _ = self._boundary_cost_and_grad(X[k], ref_traj[:, ref_k])
+            J += b_cost
+
         # Terminal
         ref_N = min(N, ref_traj.shape[1] - 1)
         err = X[N] - ref_traj[:, ref_N]
         err[2] = self.normalize_angle(err[2])
-        J += err @ self.Q_terminal @ err
+        theta_ref = ref_traj[2, ref_N]
+        Q_terminal_global = self.get_rotated_Q(theta_ref, self.Q_terminal_frenet)
+        J += err @ Q_terminal_global @ err
+        b_cost, _, _ = self._boundary_cost_and_grad(X[N], ref_traj[:, ref_N])
+        J += b_cost
         return J

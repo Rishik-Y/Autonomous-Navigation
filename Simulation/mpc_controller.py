@@ -149,35 +149,27 @@ class MPCController:
             if abs(lateral) > self.LANE_WIDTH:
                 continue
 
-            # --- Same-lane collision avoidance ---
-            if dist < self.d_safe:
-                # Quadratic barrier: C = w * (d_safe - dist)^2
-                pen = self.COLL_WEIGHT * (self.d_safe - dist) ** 2
-                cost += pen
-
-                # Gradient of dist w.r.t. my_pos:  dd/dpos = -(diff)/dist
-                # dC/dpos = dC/dd * dd/dpos = -2*w*(d_safe - dist) * (-(diff)/dist)
-                #         = 2*w*(d_safe - dist) * diff / dist
-                dC_dpos = 2.0 * self.COLL_WEIGHT * (self.d_safe - dist) * (-diff / dist)
-                grad[0] += dC_dpos[0]
-                grad[1] += dC_dpos[1]
-
-                # Approximate Hessian (Gauss-Newton)
-                outer = np.outer(diff / dist, diff / dist)
-                H_approx = 2.0 * self.COLL_WEIGHT * outer
-                hess[:2, :2] += H_approx
-
-            # --- Following penalty (longitudinal braking pressure) ---
-            # If other truck is AHEAD and close, add penalty that encourages
-            # deceleration (penalises high speed in the cost gradient).
+            # --- Platooning Logic (Strict Following) ---
+            # Instead of a spatial barrier that encourages swerving, 
+            # we strictly penalize longitudinal proximity to trucks AHEAD of us.
             if 0 < longitudinal < self.d_safe and abs(lateral) < self.LANE_WIDTH:
                 follow_gap = self.d_safe - longitudinal
-                if follow_gap > 0:
-                    # Penalty on velocity: encourage slowing down
-                    follow_pen = self.COLL_LONG_WEIGHT * follow_gap ** 2
-                    cost += follow_pen
-                    # Gradient: penalise positive velocity  →  grad on v
-                    grad[3] += 2.0 * self.COLL_LONG_WEIGHT * follow_gap * 0.5
+                
+                # Heavy penalty on getting too close longitudinally
+                cost += self.COLL_LONG_WEIGHT * follow_gap ** 2
+                
+                # 1. Gradient strictly on velocity (encourage braking)
+                grad[3] += 2.0 * self.COLL_LONG_WEIGHT * follow_gap * 0.5
+                
+                # 2. Gradient on position, but strictly along the longitudinal axis (heading)
+                # This pushes the truck backwards, NOT sideways.
+                dC_dpos = 2.0 * self.COLL_LONG_WEIGHT * follow_gap * heading
+                grad[0] += dC_dpos[0]
+                grad[1] += dC_dpos[1]
+                
+                # Hessian for longitudinal push
+                outer = np.outer(heading, heading)
+                hess[:2, :2] += 2.0 * self.COLL_LONG_WEIGHT * outer
 
         return cost, grad, hess
 

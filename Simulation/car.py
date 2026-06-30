@@ -38,9 +38,10 @@ class Car:
         self.planned_trajectory = np.zeros((2, 21)) # [x, y] for N+1 steps
         self.current_mpc_control = np.zeros(2) # [accel, steer]
 
-        # Junction yield state
-        self.approaching_junction = None   # node name of the junction we're waiting for
-        self.junction_granted = False      # True once dispatcher granted us a slot
+        # Junction state
+        self.approaching_junction = None   # hub node name we're queuing for
+        self._junction_arm = None          # arm bucket (snapped heading)
+        self.junction_granted = False      # True once crossing token is held
 
     def get_reference_trajectory(self, N, dt, other_cars=None):
         """
@@ -270,45 +271,68 @@ class Car:
         # Angle Normalization
         self.angle = (self.angle + np.pi) % (2 * np.pi) - np.pi
 
-    def _check_junction_yield(self, dispatcher):
+    def _check_junction_queue(self, dispatcher):
         """
-        Checks if a junction hub node is within JUNCTION_APPROACH_M metres ahead on the path.
-        Returns (yield_needed: bool, junction_node: str | None).
-        Called only from GOING_TO_ENDPOINT and RETURNING_TO_START states.
+        Stop-line queue system for hub junctions.
+        Trucks register in a per-arm queue when within SCAN_AHEAD_M of a junction.
+        Only the front truck of each arm can request the junction token.
+        All others stop at a designated spot on the approach road.
+
+        Returns: (yield_needed: bool)  — True means the truck must stop/yield.
         """
         if not dispatcher or not self.path:
-            return False, None
+            return False
 
-        JUNCTION_APPROACH_M = 30.0
-        JUNCTION_CLEAR_M    = 15.0  # behind us — means we've passed it
+        SCAN_AHEAD_M   = 35.0   # how far ahead on path we look for a hub node
+        JUNCTION_PASS_M = 12.0  # how far behind us means we've cleared the node
+        STOP_LINE_M    = 12.0   # distance from hub node where Q-slot 0 waits
+        SLOT_SPACING_M = 15.0   # distance between consecutive waiting slots
+
         my_pos = np.array([self.x_m, self.y_m])
 
-        # If already tracking a junction, check for pass-through or slot release
+        # ----- Already tracking a junction -----
         if self.approaching_junction is not None:
             node_pos = map_data.NODES.get(self.approaching_junction)
+
             if node_pos is not None:
-                dist = np.linalg.norm(node_pos - my_pos)
-                # Truck has passed the junction — release slot
-                if self.junction_granted and dist > JUNCTION_CLEAR_M and self.s_path_m > 5.0:
-                    # Check we are moving AWAY (junction is behind us on the path)
+                dist_to_node = np.linalg.norm(node_pos - my_pos)
+
+                # --- Clear detection: we passed through the junction ---
+                if self.junction_granted and dist_to_node > JUNCTION_PASS_M:
                     junction_s = self.path.project(node_pos, self.s_path_m)
                     if junction_s < self.s_path_m - 5.0:
-                        dispatcher.release_junction(self.approaching_junction, self.id)
+                        dispatcher.leave_junction_queue(
+                            self.approaching_junction, self._junction_arm, self.id)
                         self.approaching_junction = None
+                        self._junction_arm = None
                         self.junction_granted = False
-                        return False, None
+                        return False
 
-            if self.junction_granted:
-                return False, self.approaching_junction  # Slot held — proceed
-            else:
-                # Try again this frame (idempotent)
-                granted = dispatcher.request_junction(self.approaching_junction, self.id, self.angle)
-                self.junction_granted = granted
-                return not granted, self.approaching_junction
+                # --- Already holding token — proceed ---
+                if self.junction_granted:
+                    return False
 
-        # No junction tracked yet — scan path ahead for a hub node
+                # --- Not yet granted — check queue position ---
+                arm = self._junction_arm
+                q_idx = dispatcher.get_junction_queue_position(
+                    self.approaching_junction, arm, self.id)
+
+                if q_idx == 0:
+                    # Front of arm queue — request the crossing token
+                    granted = dispatcher.request_junction(
+                        self.approaching_junction, self.id, self.angle)
+                    self.junction_granted = granted
+                    return not granted  # yield if denied (cross traffic)
+                else:
+                    # Not front of queue — stop at designated spot
+                    stop_dist = STOP_LINE_M + (q_idx * SLOT_SPACING_M)
+                    if dist_to_node <= stop_dist + 0.5:
+                        return True   # parked at stop spot
+                    return False      # still approaching stop spot
+
+        # ----- Scan ahead for a hub node -----
         scan_s = self.s_path_m
-        for _ in range(int(JUNCTION_APPROACH_M)):
+        for _ in range(int(SCAN_AHEAD_M)):
             scan_s = min(scan_s + 1.0, self.path.length)
             scan_pos = self.path.point_at(scan_s)
             for node_name in dispatcher.hub_nodes:
@@ -316,15 +340,29 @@ class Car:
                 if node_pos is None:
                     continue
                 if np.linalg.norm(node_pos - scan_pos) < 5.0:
-                    # Junction found ahead — request slot
+                    # Snap heading to 45° bucket so same-direction trucks share one arm
+                    arm_bucket = round(math.degrees(self.angle) / 45.0) * 45
                     self.approaching_junction = node_name
-                    granted = dispatcher.request_junction(node_name, self.id, self.angle)
-                    self.junction_granted = granted
-                    return not granted, node_name
+                    self._junction_arm = arm_bucket
+
+                    q_idx = dispatcher.get_junction_queue_position(
+                        node_name, arm_bucket, self.id)
+
+                    dist_to_node = np.linalg.norm(node_pos - my_pos)
+                    if q_idx == 0:
+                        granted = dispatcher.request_junction(
+                            node_name, self.id, self.angle)
+                        self.junction_granted = granted
+                        return not granted
+                    else:
+                        stop_dist = STOP_LINE_M + (q_idx * SLOT_SPACING_M)
+                        if dist_to_node <= stop_dist + 0.5:
+                            return True   # at stop spot already
+                        return False      # still approaching
             if scan_s >= self.path.length:
                 break
 
-        return False, None
+        return False
 
     def _check_site_queue(self, dispatcher, target_speed):
         """
@@ -369,10 +407,12 @@ class Car:
         if self.op_state == "GOING_TO_ENDPOINT":
             has_arrived, speed_cmd = self._check_site_queue(dispatcher, SPEED_MS_EMPTY)
             if has_arrived:
-                # Clear any held junction slot on arrival
-                if self.approaching_junction and self.junction_granted:
-                    dispatcher.release_junction(self.approaching_junction, self.id) if dispatcher else None
+                # Clear any held junction queue slot on arrival
+                if self.approaching_junction and self.junction_granted and dispatcher:
+                    dispatcher.leave_junction_queue(
+                        self.approaching_junction, self._junction_arm, self.id)
                 self.approaching_junction = None
+                self._junction_arm = None
                 self.junction_granted = False
                 
                 # Officially enter the site
@@ -381,11 +421,10 @@ class Car:
                 self.op_timer = LOAD_UNLOAD_TIME_S
                 return 0, 0.0
                 
-            # Junction yield check (only if we're not already queued and stopped)
+            # Junction queue check (only if we're not already queued and stopped)
             if speed_cmd > 0.0:
-                yield_needed, _ = self._check_junction_yield(dispatcher)
-                if yield_needed:
-                    return 0, 0.0   # Stop and wait for junction slot
+                if self._check_junction_queue(dispatcher):
+                    return 0, 0.0   # Stop at junction stop-line
             return +1, speed_cmd
         elif self.op_state == "LOADING":
             if self.op_timer > 0: self.op_timer -= dt
@@ -412,10 +451,12 @@ class Car:
         elif self.op_state == "RETURNING_TO_START":
             has_arrived, speed_cmd = self._check_site_queue(dispatcher, SPEED_MS_LOADED)
             if has_arrived:
-                # Clear any held junction slot on arrival
-                if self.approaching_junction and self.junction_granted:
-                    dispatcher.release_junction(self.approaching_junction, self.id) if dispatcher else None
+                # Clear any held junction queue slot on arrival
+                if self.approaching_junction and self.junction_granted and dispatcher:
+                    dispatcher.leave_junction_queue(
+                        self.approaching_junction, self._junction_arm, self.id)
                 self.approaching_junction = None
+                self._junction_arm = None
                 self.junction_granted = False
                 
                 # Officially enter the site
@@ -424,11 +465,10 @@ class Car:
                 self.op_timer = LOAD_UNLOAD_TIME_S
                 return 0, 0.0
                 
-            # Junction yield check (only if we're not already queued and stopped)
+            # Junction queue check (only if we're not already queued and stopped)
             if speed_cmd > 0.0:
-                yield_needed, _ = self._check_junction_yield(dispatcher)
-                if yield_needed:
-                    return 0, 0.0   # Stop and wait for junction slot
+                if self._check_junction_queue(dispatcher):
+                    return 0, 0.0   # Stop at junction stop-line
             return +1, speed_cmd
         elif self.op_state == "UNLOADING":
             if self.op_timer > 0: self.op_timer -= dt

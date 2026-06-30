@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from Map import map_loader as map_data
 from config import *
 import copy
@@ -53,9 +54,6 @@ class Dispatcher:
             }
 
         # --- Junction Reservation System ---
-        # Max trucks allowed inside a single junction simultaneously.
-        self.MAX_JUNCTION_TRUCKS = 2
-
         # Detect hub nodes: intersections with ≥2 incoming AND ≥2 outgoing roads.
         # Computed once at startup — zero runtime overhead.
         in_degree = {node: 0 for node in road_graph}
@@ -69,13 +67,16 @@ class Dispatcher:
             node for node in road_graph
             if in_degree.get(node, 0) >= 2
             and len(road_graph[node]) >= 2
-            and node not in terminal_nodes  # terminals are handled by site_states
+            and node not in terminal_nodes
         )
-        print(f"Dispatcher: Detected {len(self.hub_nodes)} junction nodes for yield control.")
-        # Junction State: { node_name: {'count': 0, 'heading': 0.0} }
-        self.junction_states = {node: {'count': 0, 'heading': 0.0} for node in self.hub_nodes}
-        # Track which truck holds which junction slot
-        self.junction_holders = {}  # { (node_name, car_id): True }
+        print(f"Dispatcher: Detected {len(self.hub_nodes)} junction nodes for stop-line queuing.")
+
+        # Per-junction crossing token: { node_name: {'count': 0, 'heading': 0.0} }
+        self.junction_states  = {node: {'count': 0, 'heading': 0.0} for node in self.hub_nodes}
+        # Crossing token holders: { (node_name, car_id): True }
+        self.junction_holders = {}
+        # Per-arm approach queues: { node_name: { arm_bucket: [car_id, ...] } }
+        self.junction_arm_queues = {node: {} for node in self.hub_nodes}
 
     def update_global_plan(self, trucks):
         """
@@ -216,44 +217,67 @@ class Dispatcher:
             if state['active_truck'] == car_id:
                 state['active_truck'] = None
 
-    def request_junction(self, node_name, car_id, heading):
+    def get_junction_queue_position(self, node_name, arm, car_id):
         """
-        Directional junction reservation.
-        If empty, truck claims it and sets the active heading.
-        Subsequent trucks going the SAME direction (<60 deg diff) can enter freely (platooning).
-        Cross-traffic must yield until the junction count hits 0.
+        Register car_id in the approach queue for (node_name, arm).
+        Returns 0-based position; 0 = front, allowed to request crossing token.
+        Idempotent: repeated calls return the same position.
         """
-        import math
-        key = (node_name, car_id)
-        if key in self.junction_holders:
-            return True  # Already inside
-            
-        state = self.junction_states.setdefault(node_name, {'count': 0, 'heading': 0.0})
-        
-        if state['count'] == 0:
-            # Junction is empty, claim it
-            state['heading'] = heading
-            state['count'] = 1
-            self.junction_holders[key] = True
-            return True
-            
-        # Junction is active, check direction compatibility
-        angle_diff = (heading - state['heading'] + math.pi) % (2 * math.pi) - math.pi
-        if abs(angle_diff) < math.radians(60):
-            # Same direction platoon — let them in!
-            state['count'] += 1
-            self.junction_holders[key] = True
-            return True
-            
-        return False  # Cross-traffic — yield!
+        arms = self.junction_arm_queues.setdefault(node_name, {})
+        q = arms.setdefault(arm, [])
+        if car_id not in q:
+            q.append(car_id)
+        return q.index(car_id)
 
-    def release_junction(self, node_name, car_id):
-        """Release the truck's hold on the junction."""
+    def leave_junction_queue(self, node_name, arm, car_id):
+        """
+        Remove car_id from the arm queue and release its crossing token (if held).
+        Called when a truck has physically cleared the junction.
+        """
+        # Release crossing token
         key = (node_name, car_id)
         if key in self.junction_holders:
             del self.junction_holders[key]
             if node_name in self.junction_states:
-                self.junction_states[node_name]['count'] = max(0, self.junction_states[node_name]['count'] - 1)
+                self.junction_states[node_name]['count'] = max(
+                    0, self.junction_states[node_name]['count'] - 1)
+
+        # Remove from arm queue
+        if node_name in self.junction_arm_queues:
+            q = self.junction_arm_queues[node_name].get(arm, [])
+            if car_id in q:
+                q.remove(car_id)
+
+    def request_junction(self, node_name, car_id, heading):
+        """
+        Directional crossing token.
+        Empty junction: first truck claims it and sets active heading.
+        Same-direction trucks (<60°): join the active platoon freely.
+        Cross-traffic: denied until junction count reaches 0.
+        """
+        key = (node_name, car_id)
+        if key in self.junction_holders:
+            return True  # Already inside
+
+        state = self.junction_states.setdefault(node_name, {'count': 0, 'heading': 0.0})
+
+        if state['count'] == 0:
+            state['heading'] = heading
+            state['count'] = 1
+            self.junction_holders[key] = True
+            return True
+
+        angle_diff = (heading - state['heading'] + math.pi) % (2 * math.pi) - math.pi
+        if abs(angle_diff) < math.radians(60):
+            state['count'] += 1
+            self.junction_holders[key] = True
+            return True
+
+        return False  # Cross-traffic — yield!
+
+    def release_junction(self, node_name, car_id):
+        """Legacy alias kept for any remaining call sites."""
+        self.leave_junction_queue(node_name, None, car_id)
 
     def count_yielding_trucks(self, cars):
         """Returns how many trucks are currently in YIELDING_AT_JUNCTION state."""

@@ -54,19 +54,20 @@ class Dispatcher:
             }
 
         # --- Junction Reservation System ---
-        # Detect hub nodes: intersections with ≥2 incoming AND ≥2 outgoing roads.
+        # Detect hub nodes: intersections, T-junctions, forks, and merges.
+        # A true junction is any node connected to >= 3 UNIQUE neighboring nodes.
         # Computed once at startup — zero runtime overhead.
-        in_degree = {node: 0 for node in road_graph}
-        for node, edges in road_graph.items():
-            for target, _ in edges:
-                if target in in_degree:
-                    in_degree[target] += 1
+        neighbors = {node: set() for node in road_graph}
+        for src, edges in road_graph.items():
+            for dst, _ in edges:
+                neighbors[src].add(dst)
+                if dst in neighbors:
+                    neighbors[dst].add(src)
 
         terminal_nodes = set(map_data.LOAD_ZONES + map_data.DUMP_ZONES)
         self.hub_nodes = set(
-            node for node in road_graph
-            if in_degree.get(node, 0) >= 2
-            and len(road_graph[node]) >= 2
+            node for node, nbrs in neighbors.items()
+            if len(nbrs) >= 3
             and node not in terminal_nodes
         )
         print(f"Dispatcher: Detected {len(self.hub_nodes)} junction nodes for stop-line queuing.")

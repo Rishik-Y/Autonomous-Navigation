@@ -1003,10 +1003,6 @@
             "ix_east_2"
         ],
         [
-            "connector_2_3",
-            "dump_zone_2"
-        ],
-        [
             "dump_hub_1a",
             "dump_hub_1b"
         ],
@@ -1561,10 +1557,6 @@
         [
             "load_zone_1",
             "purple_auto_fix_1"
-        ],
-        [
-            "load_zone_3",
-            "connector_1_1"
         ],
         [
             "main_hub",

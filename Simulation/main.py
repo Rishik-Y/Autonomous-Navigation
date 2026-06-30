@@ -5,6 +5,8 @@ import random
 import pickle
 import os
 import json
+import concurrent.futures
+import time
 
 # --- Module Imports ---
 from Map import map_loader as map_data
@@ -319,6 +321,10 @@ def run_simulation():
     global_opt_timer = 0.0
     GLOBAL_OPT_INTERVAL = 30.0 # Run heavy optimization every 30 seconds
 
+    # --- Thread Pool for MPC ---
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=truck_count)
+    last_mpc_time_ms = 0.0
+
     # --- Main Loop ---
     running = True
     while running:
@@ -389,13 +395,22 @@ def run_simulation():
                 # Gather all PLANNED trajectories (Sync Step)
                 all_trajectories = [c.planned_trajectory for c in cars]
 
+                mpc_start_time = time.perf_counter()
+                futures = []
                 for i, car in enumerate(cars):
                     # Skip MPC during K-turn maneuver
                     if car.op_state == "TURNING_AROUND":
                         continue
                     # Cooperative Collision Avoidance: Share trajectories
                     other_trajectories = [all_trajectories[j] for j in range(len(cars)) if j != i]
-                    car.run_mpc(other_trajectories, other_cars=cars)
+                    fut = executor.submit(car.run_mpc, other_trajectories, cars)
+                    futures.append(fut)
+                
+                # Wait for all MPC threads to complete
+                for fut in futures:
+                    fut.result()
+                
+                last_mpc_time_ms = (time.perf_counter() - mpc_start_time) * 1000.0
 
             # --- Physics Update Step (60Hz) ---
             for idx, car in enumerate(cars):
@@ -488,6 +503,7 @@ def run_simulation():
                 f"Dispatcher: Advanced (Swarm Plan)",
                 f"Active Trucks: {len(cars)}",
                 f"Sim Speed: {sim_speed}x | {'Paused' if paused else 'Running'}",
+                f"MPC Solve Time: {last_mpc_time_ms:.1f} ms",
                 "Controls: TAB switch | SPACE play/pause | SHIFT+0 (0.5x) | SHIFT+1-5 (1-5x) | ESC back"
             ]
             for i, text in enumerate(hud_texts):
@@ -500,6 +516,8 @@ def run_simulation():
             draw_tooltip(screen, mouse_pos, hovered, font)
 
         pygame.display.flip()
+    
+    executor.shutdown(wait=True)
     pygame.quit()
 
 if __name__ == '__main__':

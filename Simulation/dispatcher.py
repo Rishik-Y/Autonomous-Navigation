@@ -38,14 +38,18 @@ class Dispatcher:
             self.site_states[zone] = {
                 'en_route': 0, 
                 'service_time': LOAD_UNLOAD_TIME_S,
-                'coal_remaining': coal_remaining
+                'coal_remaining': coal_remaining,
+                'active_truck': None,
+                'queue': []  # list of car_ids waiting
             }
             
         for zone in map_data.DUMP_ZONES:
             self.site_states[zone] = {
                 'en_route': 0, 
                 'service_time': LOAD_UNLOAD_TIME_S,
-                'coal_dumped': 0  # Track total coal dumped at this site
+                'coal_dumped': 0,  # Track total coal dumped at this site
+                'active_truck': None,
+                'queue': []
             }
 
         # --- Junction Reservation System ---
@@ -168,6 +172,49 @@ class Dispatcher:
             if self.site_states[site_name]['en_route'] > 0:
                 self.site_states[site_name]['en_route'] -= 1
                 # print(f"Dispatcher: Truck finished at {site_name}. Queue: {self.site_states[site_name]['en_route']}")
+
+    # --- Site Queuing System ---
+    def get_queue_position(self, site_name, car_id):
+        """Adds car to the queue if not in it, and returns its 0-based index."""
+        if site_name not in self.site_states:
+            return 0
+        state = self.site_states[site_name]
+        if car_id not in state['queue']:
+            # Only queue if it's not already the active truck
+            if state['active_truck'] != car_id:
+                state['queue'].append(car_id)
+        if car_id in state['queue']:
+            return state['queue'].index(car_id)
+        return 0
+
+    def is_site_free(self, site_name, car_id):
+        """Check if the truck is allowed to enter the site."""
+        if site_name not in self.site_states:
+            return True
+        state = self.site_states[site_name]
+        
+        # Free if empty, OR if I am already the active truck, OR if I'm first in queue and there's no active truck
+        if state['active_truck'] == car_id:
+            return True
+        if state['active_truck'] is None:
+            if not state['queue'] or state['queue'][0] == car_id:
+                return True
+        return False
+
+    def enter_site(self, site_name, car_id):
+        """Truck officially enters the load/dump zone."""
+        if site_name in self.site_states:
+            state = self.site_states[site_name]
+            state['active_truck'] = car_id
+            if car_id in state['queue']:
+                state['queue'].remove(car_id)
+
+    def leave_site(self, site_name, car_id):
+        """Truck leaves the load/dump zone."""
+        if site_name in self.site_states:
+            state = self.site_states[site_name]
+            if state['active_truck'] == car_id:
+                state['active_truck'] = None
 
     def request_junction(self, node_name, car_id, heading):
         """

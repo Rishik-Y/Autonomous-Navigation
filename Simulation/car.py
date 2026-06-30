@@ -326,25 +326,67 @@ class Car:
 
         return False, None
 
+    def _check_site_queue(self, dispatcher, target_speed):
+        """
+        Manages approach to the load/dump zone queue.
+        Returns (has_arrived: bool, desired_speed: float).
+        """
+        if not dispatcher or not self.path:
+            return False, target_speed
+
+        path_length_m = self.path.length
+        dist_to_end = path_length_m - self.s_path_m
+
+        if dist_to_end > 100.0:
+            return False, target_speed  # Too far, drive normally
+
+        # Always register in the queue to secure our place in line
+        q_idx = dispatcher.get_queue_position(self.target_node_name, self.id)
+        
+        is_free = dispatcher.is_site_free(self.target_node_name, self.id)
+
+        # Handle arrival at the actual site (0m)
+        if is_free and dist_to_end <= 5.0 and self.speed_ms < 1.0:
+            return True, 0.0  # Signal arrival!
+
+        # If site is busy, we must queue up at our designated spot
+        if not is_free:
+            # Spot 0 is 15m back, Spot 1 is 30m, Spot 2 is 45m...
+            stop_dist = 15.0 + (q_idx * 15.0)
+            dist_to_stop = dist_to_end - stop_dist
+
+            if dist_to_stop <= 0.5:
+                return False, 0.0  # We are parked at our queue spot, wait
+            elif dist_to_stop < 15.0:
+                return False, 2.0  # Crawl to spot (2 m/s)
+                
+        return False, target_speed
+
     def update_op_state(self, dt, dispatcher=None):
         path_length_m = self.path.length if self.path else 0
         current_s_m = self.s_path_m
         
         if self.op_state == "GOING_TO_ENDPOINT":
-            if current_s_m >= path_length_m - 5.0 and self.speed_ms < 1.0:
+            has_arrived, speed_cmd = self._check_site_queue(dispatcher, SPEED_MS_EMPTY)
+            if has_arrived:
                 # Clear any held junction slot on arrival
                 if self.approaching_junction and self.junction_granted:
                     dispatcher.release_junction(self.approaching_junction, self.id) if dispatcher else None
                 self.approaching_junction = None
                 self.junction_granted = False
+                
+                # Officially enter the site
+                if dispatcher: dispatcher.enter_site(self.target_node_name, self.id)
                 self.op_state = "LOADING"
                 self.op_timer = LOAD_UNLOAD_TIME_S
                 return 0, 0.0
-            # Junction yield check
-            yield_needed, _ = self._check_junction_yield(dispatcher)
-            if yield_needed:
-                return 0, 0.0   # Stop and wait for slot
-            return +1, SPEED_MS_EMPTY
+                
+            # Junction yield check (only if we're not already queued and stopped)
+            if speed_cmd > 0.0:
+                yield_needed, _ = self._check_junction_yield(dispatcher)
+                if yield_needed:
+                    return 0, 0.0   # Stop and wait for junction slot
+            return +1, speed_cmd
         elif self.op_state == "LOADING":
             if self.op_timer > 0: self.op_timer -= dt
             else:
@@ -358,29 +400,36 @@ class Car:
                 if dispatcher:
                     actual_coal = dispatcher.consume_coal(self.target_node_name, max_cargo)
                     self.current_mass_kg = MASS_KG + actual_coal
+                    dispatcher.release_reservation(self.target_node_name)
+                    dispatcher.leave_site(self.target_node_name, self.id)
                 else:
                     self.current_mass_kg = MASS_KG + max_cargo
-                if dispatcher: dispatcher.release_reservation(self.target_node_name)
                 return +1, SPEED_MS_LOADED
             return 0, 0.0
         elif self.op_state == "TURNING_AROUND":
             # Maneuver handled by execute_turn_step() in main loop
             return 0, 0.0
         elif self.op_state == "RETURNING_TO_START":
-            if current_s_m >= path_length_m - 5.0 and self.speed_ms < 1.0:
+            has_arrived, speed_cmd = self._check_site_queue(dispatcher, SPEED_MS_LOADED)
+            if has_arrived:
                 # Clear any held junction slot on arrival
                 if self.approaching_junction and self.junction_granted:
                     dispatcher.release_junction(self.approaching_junction, self.id) if dispatcher else None
                 self.approaching_junction = None
                 self.junction_granted = False
+                
+                # Officially enter the site
+                if dispatcher: dispatcher.enter_site(self.target_node_name, self.id)
                 self.op_state = "UNLOADING"
                 self.op_timer = LOAD_UNLOAD_TIME_S
                 return 0, 0.0
-            # Junction yield check
-            yield_needed, _ = self._check_junction_yield(dispatcher)
-            if yield_needed:
-                return 0, 0.0   # Stop and wait for slot
-            return +1, SPEED_MS_LOADED
+                
+            # Junction yield check (only if we're not already queued and stopped)
+            if speed_cmd > 0.0:
+                yield_needed, _ = self._check_junction_yield(dispatcher)
+                if yield_needed:
+                    return 0, 0.0   # Stop and wait for junction slot
+            return +1, speed_cmd
         elif self.op_state == "UNLOADING":
             if self.op_timer > 0: self.op_timer -= dt
             else:
@@ -391,10 +440,12 @@ class Car:
                 self.turn_phase_timer = 0.0
                 # Record coal dumped at dump site
                 coal_to_dump = self.current_mass_kg - MASS_KG
-                if dispatcher and coal_to_dump > 0:
-                    dispatcher.record_coal_dumped(self.target_node_name, coal_to_dump)
+                if dispatcher:
+                    if coal_to_dump > 0:
+                        dispatcher.record_coal_dumped(self.target_node_name, coal_to_dump)
+                    dispatcher.release_reservation(self.target_node_name)
+                    dispatcher.leave_site(self.target_node_name, self.id)
                 self.current_mass_kg = MASS_KG
-                if dispatcher: dispatcher.release_reservation(self.target_node_name)
                 return +1, SPEED_MS_EMPTY
             return 0, 0.0
         return 0, 0.0

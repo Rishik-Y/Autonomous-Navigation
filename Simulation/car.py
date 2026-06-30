@@ -5,6 +5,7 @@ from config import *
 from utils import resist_forces, traction_force_from_power, brake_force_from_command
 from mpc_controller import MPCController
 from cyberpunk_driver import CyberpunkDriver
+from Map import map_loader as map_data
 
 class Car:
     def __init__(self, car_id, x_m, y_m, angle=0):
@@ -36,6 +37,10 @@ class Car:
         self.mpc = MPCController(dt=0.1, N=20, wheelbase=WHEELBASE_M, d_safe=SAFE_DISTANCE_M)
         self.planned_trajectory = np.zeros((2, 21)) # [x, y] for N+1 steps
         self.current_mpc_control = np.zeros(2) # [accel, steer]
+
+        # Junction yield state
+        self.approaching_junction = None   # node name of the junction we're waiting for
+        self.junction_granted = False      # True once dispatcher granted us a slot
 
     def get_reference_trajectory(self, N, dt, other_cars=None):
         """
@@ -156,28 +161,76 @@ class Car:
 
         return ref
 
-    def run_mpc(self, other_cars_trajectories, other_cars=None):
+    def run_mpc(self, all_traj_stack_or_list, own_idx=None, other_cars=None):
+        """
+        Run MPC solver.
+
+        Can be called in two ways:
+          1. Threaded batch (normal operation):
+             run_mpc(all_traj_stack, own_idx=i, other_cars=cars)
+             all_traj_stack: (num_cars, 2, N+1) ndarray; own_idx slices out self.
+          2. Single warm-up / post-K-turn (no other trucks yet):
+             run_mpc([]) or run_mpc([], other_cars=cars)
+             Passes an empty array to the solver, which skips collision costs.
+        """
         if not self.path:
             self.current_mpc_control = np.zeros(2)
             self.planned_trajectory = np.tile(np.array([[self.x_m], [self.y_m]]), (1, self.mpc.N + 1))
             return
 
+        # Build the "other trajectories" stacked array
+        if isinstance(all_traj_stack_or_list, np.ndarray) and own_idx is not None:
+            # Fast path: delete own row from the (num_cars, 2, N+1) stack
+            other_traj_arr = np.delete(all_traj_stack_or_list, own_idx, axis=0)
+        else:
+            # Legacy path: called with [] at startup or post-K-turn
+            other_traj_arr = np.empty((0, 2, self.mpc.N + 1))
+
         state = [self.x_m, self.y_m, self.angle, self.speed_ms]
         ref = self.get_reference_trajectory(self.mpc.N, self.mpc.dt, other_cars=other_cars)
         
-        u_opt, x_opt = self.mpc.solve(state, ref, other_cars_trajectories)
+        u_opt, x_opt = self.mpc.solve(state, ref, other_traj_arr)
         
         # Apply the FIRST control action
         self.current_mpc_control = u_opt[0]
         
         # Store plan for visualization and collision avoidance
-        self.planned_trajectory = x_opt.T[:2, :] # Transpose to (2, N+1)
+        self.planned_trajectory = x_opt.T[:2, :]  # shape: (2, N+1)
+
 
     def move(self, dt):
         """Apply MPC controls using the SAME bicycle kinematic model the MPC uses.
         This eliminates model mismatch — the truck moves exactly as the MPC predicts."""
         accel_cmd = self.current_mpc_control[0]
-        steer_input = self.current_mpc_control[1]
+        
+        # --- Pure Pursuit Steering (Async Fix) ---
+        # Instead of blindly applying the MPC's raw steering command for the entire async delay 
+        # (which causes massive sine-wave oscillations due to oversteering), we use a 60Hz 
+        # pure pursuit controller to smoothly track the (x,y) path the MPC actually planned.
+        steer_input = 0.0
+        if hasattr(self, 'planned_trajectory') and self.planned_trajectory.shape[1] > 1:
+            my_pos = np.array([self.x_m, self.y_m])
+            # Lookahead scales with speed (e.g. 0.5s ahead, min 4m)
+            lookahead_dist = max(4.0, self.speed_ms * 0.5)
+            
+            target_pt = None
+            for i in range(1, self.planned_trajectory.shape[1]):
+                pt = self.planned_trajectory[:, i]
+                if np.linalg.norm(pt - my_pos) >= lookahead_dist:
+                    target_pt = pt
+                    break
+                    
+            if target_pt is None:
+                target_pt = self.planned_trajectory[:, -1]
+                
+            dx = target_pt[0] - self.x_m
+            dy = target_pt[1] - self.y_m
+            target_angle = math.atan2(dy, dx)
+            alpha = (target_angle - self.angle + math.pi) % (2 * math.pi) - math.pi
+            
+            L_d = np.linalg.norm(target_pt - my_pos)
+            if L_d > 0.1:
+                steer_input = math.atan2(2.0 * WHEELBASE_M * math.sin(alpha), L_d)
         
         # --- FAILSAFE: Emergency Override ---
         # If the high-level Cyberpunk logic demands a STOP (target < 0.1 m/s), 
@@ -217,15 +270,80 @@ class Car:
         # Angle Normalization
         self.angle = (self.angle + np.pi) % (2 * np.pi) - np.pi
 
+    def _check_junction_yield(self, dispatcher):
+        """
+        Checks if a junction hub node is within JUNCTION_APPROACH_M metres ahead on the path.
+        Returns (yield_needed: bool, junction_node: str | None).
+        Called only from GOING_TO_ENDPOINT and RETURNING_TO_START states.
+        """
+        if not dispatcher or not self.path:
+            return False, None
+
+        JUNCTION_APPROACH_M = 30.0
+        JUNCTION_CLEAR_M    = 15.0  # behind us — means we've passed it
+        my_pos = np.array([self.x_m, self.y_m])
+
+        # If already tracking a junction, check for pass-through or slot release
+        if self.approaching_junction is not None:
+            node_pos = map_data.NODES.get(self.approaching_junction)
+            if node_pos is not None:
+                dist = np.linalg.norm(node_pos - my_pos)
+                # Truck has passed the junction — release slot
+                if self.junction_granted and dist > JUNCTION_CLEAR_M and self.s_path_m > 5.0:
+                    # Check we are moving AWAY (junction is behind us on the path)
+                    junction_s = self.path.project(node_pos, self.s_path_m)
+                    if junction_s < self.s_path_m - 5.0:
+                        dispatcher.release_junction(self.approaching_junction, self.id)
+                        self.approaching_junction = None
+                        self.junction_granted = False
+                        return False, None
+
+            if self.junction_granted:
+                return False, self.approaching_junction  # Slot held — proceed
+            else:
+                # Try again this frame (idempotent)
+                granted = dispatcher.request_junction(self.approaching_junction, self.id, self.angle)
+                self.junction_granted = granted
+                return not granted, self.approaching_junction
+
+        # No junction tracked yet — scan path ahead for a hub node
+        scan_s = self.s_path_m
+        for _ in range(int(JUNCTION_APPROACH_M)):
+            scan_s = min(scan_s + 1.0, self.path.length)
+            scan_pos = self.path.point_at(scan_s)
+            for node_name in dispatcher.hub_nodes:
+                node_pos = map_data.NODES.get(node_name)
+                if node_pos is None:
+                    continue
+                if np.linalg.norm(node_pos - scan_pos) < 5.0:
+                    # Junction found ahead — request slot
+                    self.approaching_junction = node_name
+                    granted = dispatcher.request_junction(node_name, self.id, self.angle)
+                    self.junction_granted = granted
+                    return not granted, node_name
+            if scan_s >= self.path.length:
+                break
+
+        return False, None
+
     def update_op_state(self, dt, dispatcher=None):
         path_length_m = self.path.length if self.path else 0
         current_s_m = self.s_path_m
         
         if self.op_state == "GOING_TO_ENDPOINT":
             if current_s_m >= path_length_m - 5.0 and self.speed_ms < 1.0:
+                # Clear any held junction slot on arrival
+                if self.approaching_junction and self.junction_granted:
+                    dispatcher.release_junction(self.approaching_junction, self.id) if dispatcher else None
+                self.approaching_junction = None
+                self.junction_granted = False
                 self.op_state = "LOADING"
                 self.op_timer = LOAD_UNLOAD_TIME_S
-                return 0, 0.0 
+                return 0, 0.0
+            # Junction yield check
+            yield_needed, _ = self._check_junction_yield(dispatcher)
+            if yield_needed:
+                return 0, 0.0   # Stop and wait for slot
             return +1, SPEED_MS_EMPTY
         elif self.op_state == "LOADING":
             if self.op_timer > 0: self.op_timer -= dt
@@ -250,10 +368,19 @@ class Car:
             return 0, 0.0
         elif self.op_state == "RETURNING_TO_START":
             if current_s_m >= path_length_m - 5.0 and self.speed_ms < 1.0:
+                # Clear any held junction slot on arrival
+                if self.approaching_junction and self.junction_granted:
+                    dispatcher.release_junction(self.approaching_junction, self.id) if dispatcher else None
+                self.approaching_junction = None
+                self.junction_granted = False
                 self.op_state = "UNLOADING"
                 self.op_timer = LOAD_UNLOAD_TIME_S
-                return 0, 0.0 
-            return +1, SPEED_MS_LOADED 
+                return 0, 0.0
+            # Junction yield check
+            yield_needed, _ = self._check_junction_yield(dispatcher)
+            if yield_needed:
+                return 0, 0.0   # Stop and wait for slot
+            return +1, SPEED_MS_LOADED
         elif self.op_state == "UNLOADING":
             if self.op_timer > 0: self.op_timer -= dt
             else:

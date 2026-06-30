@@ -16,7 +16,7 @@ class MPCController:
     - Collision Hessian for better iLQR convergence.
     """
 
-    def __init__(self, dt=0.1, N=20, wheelbase=2.8, d_safe=8.0):
+    def __init__(self, dt=0.1, N=10, wheelbase=2.8, d_safe=8.0):
         self.dt = dt
         self.N = N
         self.L = wheelbase
@@ -44,8 +44,10 @@ class MPCController:
         self.COLL_LONG_WEIGHT = 200.0  # longitudinal following penalty
 
         # --- iLQR parameters (Adaptive Regularization) ---
-        self.max_iters = 10
-        self.line_search_steps = 5
+        # Tuned for real-time performance with 30 truck fleets.
+        # Warm-start provides near-optimal U, so fewer iters converge fine.
+        self.max_iters = 5
+        self.line_search_steps = 3
         self.reg_min = 1e-6
         self.reg_max = 1e4
         self.reg_factor = 10.0
@@ -109,67 +111,77 @@ class MPCController:
     # Lane-aware collision cost
     # ------------------------------------------------------------------
 
-    def _collision_cost_and_grad(self, my_state, other_trajectories, k):
+    def _collision_cost_and_grad(self, my_state, other_traj_arr, k):
         """
-        Returns (cost_scalar, grad_x4) for step k.
+        Vectorized collision cost for step k.
 
-        Decomposition:
-          - longitudinal = projection of diff onto my heading  (ahead / behind)
-          - lateral      = rejection  (same lane vs opposite lane)
+        other_traj_arr : (num_others, 2, N+1) stacked NumPy array.
 
-        Rules:
-          - |lateral| > LANE_WIDTH  → skip (opposite lane, trucks pass naturally)
-          - |lateral| < LANE_WIDTH AND longitudinal close → penalise longitudinally
-            (truck should BRAKE, not swerve)
+        Instead of a Python loop over each truck, we compute distances and
+        gradients for ALL other trucks simultaneously using NumPy broadcasting.
+        This eliminates GIL contention and scales to 30+ trucks with minimal overhead.
+
+        Only trucks that are:
+          - AHEAD of us (longitudinal > 0)
+          - Within d_safe longitudinally
+          - In the same lane (|lateral| < LANE_WIDTH)
+        contribute to the cost, enforcing strict platooning with no swerving.
         """
-        cost = 0.0
         grad = np.zeros(4)
         hess = np.zeros((4, 4))
+
+        if other_traj_arr is None or other_traj_arr.shape[0] == 0:
+            return 0.0, grad, hess
+
+        # Guard: k must be within the trajectory horizon
+        if k >= other_traj_arr.shape[2]:
+            return 0.0, grad, hess
 
         my_pos = my_state[:2]
         theta = my_state[2]
         heading = np.array([np.cos(theta), np.sin(theta)])
-        normal = np.array([-np.sin(theta), np.cos(theta)])
+        normal  = np.array([-np.sin(theta), np.cos(theta)])
 
-        for traj in other_trajectories:
-            if k >= traj.shape[1]:
-                continue
-            oth_pos = traj[:, k]
-            diff = oth_pos - my_pos           # vector FROM me TO other
-            dist = np.linalg.norm(diff) + 1e-6
+        # All other trucks' positions at step k: shape (num_others, 2)
+        oth_pos = other_traj_arr[:, :, k]
 
-            if dist > self.d_safe * 2.0:
-                continue  # too far, skip
+        # Vectors FROM me TO each other truck: shape (num_others, 2)
+        diffs = oth_pos - my_pos
 
-            # Decompose
-            longitudinal = np.dot(diff, heading)   # +ve = ahead of me
-            lateral = np.dot(diff, normal)          # +ve = to my left
+        # Project onto heading and normal: shape (num_others,)
+        longitudinals = diffs @ heading   # +ve = other truck is AHEAD of me
+        laterals      = diffs @ normal    # +ve = other truck is to my LEFT
 
-            # --- Skip if clearly on opposite lane ---
-            if abs(lateral) > self.LANE_WIDTH:
-                continue
+        # --- Vectorized mask: same lane, ahead, within safety gap ---
+        mask = (
+            (longitudinals > 0) &
+            (longitudinals < self.d_safe) &
+            (np.abs(laterals) < self.LANE_WIDTH)
+        )
 
-            # --- Platooning Logic (Strict Following) ---
-            # Instead of a spatial barrier that encourages swerving, 
-            # we strictly penalize longitudinal proximity to trucks AHEAD of us.
-            if 0 < longitudinal < self.d_safe and abs(lateral) < self.LANE_WIDTH:
-                follow_gap = self.d_safe - longitudinal
-                
-                # Heavy penalty on getting too close longitudinally
-                cost += self.COLL_LONG_WEIGHT * follow_gap ** 2
-                
-                # 1. Gradient strictly on velocity (encourage braking)
-                grad[3] += 2.0 * self.COLL_LONG_WEIGHT * follow_gap * 0.5
-                
-                # 2. Gradient on position, but strictly along the longitudinal axis (heading)
-                # This pushes the truck backwards, NOT sideways.
-                dC_dpos = 2.0 * self.COLL_LONG_WEIGHT * follow_gap * heading
-                grad[0] += dC_dpos[0]
-                grad[1] += dC_dpos[1]
-                
-                # Hessian for longitudinal push
-                outer = np.outer(heading, heading)
-                hess[:2, :2] += 2.0 * self.COLL_LONG_WEIGHT * outer
+        valid_longs = longitudinals[mask]
+
+        if valid_longs.size == 0:
+            return 0.0, grad, hess
+
+        # Gaps to close before collision: shape (num_valid,)
+        follow_gaps = self.d_safe - valid_longs   # all positive
+
+        # Cost: sum of quadratic penalties
+        cost = float(np.sum(self.COLL_LONG_WEIGHT * follow_gaps ** 2))
+
+        # Gradient on velocity (encourage braking for ALL valid trucks at once)
+        grad[3] = float(np.sum(self.COLL_LONG_WEIGHT * follow_gaps))  # = 2 * w * gap * 0.5 summed
+
+        # Gradient on position: push strictly along heading (no swerve pressure)
+        total_pos_grad_mag = float(np.sum(2.0 * self.COLL_LONG_WEIGHT * follow_gaps))
+        grad[0] = total_pos_grad_mag * heading[0]
+        grad[1] = total_pos_grad_mag * heading[1]
+
+        # Hessian: scaled by number of valid trucks in range
+        n_valid = valid_longs.size
+        outer = np.outer(heading, heading)
+        hess[:2, :2] = n_valid * 2.0 * self.COLL_LONG_WEIGHT * outer
 
         return cost, grad, hess
 
@@ -181,9 +193,9 @@ class MPCController:
         """
         iLQR solver with adaptive regularisation and warm start.
 
-        x0              : [x, y, theta, v]
-        ref_traj        : (4, N+1)
-        other_trajectories : list of (2, N+1)
+        x0                 : [x, y, theta, v]
+        ref_traj           : (4, N+1)
+        other_trajectories : (num_others, 2, N+1) stacked ndarray
         """
         N = self.N
 

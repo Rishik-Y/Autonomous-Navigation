@@ -48,6 +48,31 @@ class Dispatcher:
                 'coal_dumped': 0  # Track total coal dumped at this site
             }
 
+        # --- Junction Reservation System ---
+        # Max trucks allowed inside a single junction simultaneously.
+        self.MAX_JUNCTION_TRUCKS = 2
+
+        # Detect hub nodes: intersections with ≥2 incoming AND ≥2 outgoing roads.
+        # Computed once at startup — zero runtime overhead.
+        in_degree = {node: 0 for node in road_graph}
+        for node, edges in road_graph.items():
+            for target, _ in edges:
+                if target in in_degree:
+                    in_degree[target] += 1
+
+        terminal_nodes = set(map_data.LOAD_ZONES + map_data.DUMP_ZONES)
+        self.hub_nodes = set(
+            node for node in road_graph
+            if in_degree.get(node, 0) >= 2
+            and len(road_graph[node]) >= 2
+            and node not in terminal_nodes  # terminals are handled by site_states
+        )
+        print(f"Dispatcher: Detected {len(self.hub_nodes)} junction nodes for yield control.")
+        # Junction State: { node_name: {'count': 0, 'heading': 0.0} }
+        self.junction_states = {node: {'count': 0, 'heading': 0.0} for node in self.hub_nodes}
+        # Track which truck holds which junction slot
+        self.junction_holders = {}  # { (node_name, car_id): True }
+
     def update_global_plan(self, trucks):
         """
         Runs the Global Optimizer to update fleet assignments.
@@ -78,55 +103,28 @@ class Dispatcher:
         current_pos = np.array([car.x_m, car.y_m])
         is_loaded = (car.current_mass_kg > MASS_KG + 100) # Simple threshold
         
-        candidates = map_data.DUMP_ZONES if is_loaded else map_data.LOAD_ZONES
-        
-        # --- PRIORITY 1: GLOBAL OPTIMIZATION QUEUE ---
-        
-        if not is_loaded and car.id in self.pending_assignments:
-            # Check if queue has items
-            plan_queue = self.pending_assignments[car.id]
-            
-            while plan_queue:
-                target = plan_queue[0] # Peek
+        # --- 1. Global Optimizer Queue ---
+        if self.use_global_optimization and car.id in self.pending_assignments:
+            plan = self.pending_assignments[car.id]
+            if len(plan) > 0:
+                target = plan.pop(0)
+                # print(f"Dispatcher: Truck {car.id} following global plan -> {target}")
+                self.site_states[target]['en_route'] += 1
+                return target
                 
-                # Validate target (is it still active?)
-                state = self.site_states.get(target, {})
-                coal_remaining = state.get('coal_remaining', 0)
-                
-                if coal_remaining > 0:
-                    # Valid assignment!
-                    plan_queue.pop(0) # Consume it
-                    
-                    # Register reservation
-                    self.site_states[target]['en_route'] += 1
-                    print(f"Dispatcher: Truck {car.id} following Global Plan -> {target} (Queue: {len(plan_queue)})")
-                    return target
-                else:
-                    # Invalid (mine depleted since plan), pop and try next
-                    print(f"Dispatcher: Skipping depleted target {target} in plan for Truck {car.id}")
-                    plan_queue.pop(0)
-            
-            # If we exit loop, queue is empty or all invalid -> Fallback
-        
-        # --- PRIORITY 2: LOCAL GREEDY FALLBACK ---
+        # --- 2. Fallback Greedy Dispatch ---
+        target_list = map_data.DUMP_ZONES if is_loaded else map_data.LOAD_ZONES
         
         best_site = None
         best_score = float('inf')
         
-        for site in candidates:
-            # Skip depleted mines (only for load zones)
-            if not is_loaded:
-                state = self.site_states.get(site, {})
-                coal_remaining = state.get('coal_remaining', float('inf'))
-                if coal_remaining <= 0:
-                    continue  # Skip this mine, it's depleted
-            
-            # 1. Estimate Travel Time (Heuristic: Euclidean / Speed)
-            # IMPROVEMENT: Use GraphAdapter distances if available?
-            # For fallback, let's keep it simple/fast with Euclidean, 
-            # OR use the optimizer's distance matrix if we have it!
-            
-            if self.optimizer:
+        for site in target_list:
+            # Skip empty mines
+            if not is_loaded and self.site_states[site]['coal_remaining'] <= 0:
+                continue
+                
+            # 1. Estimate Travel Time
+            if self.use_global_optimization and self.optimizer:
                  # Use high-fidelity distance if available
                  # We need to find nearest node to car if not at a node
                  start_node = car.current_node_name if car.current_node_name else None
@@ -170,6 +168,49 @@ class Dispatcher:
             if self.site_states[site_name]['en_route'] > 0:
                 self.site_states[site_name]['en_route'] -= 1
                 # print(f"Dispatcher: Truck finished at {site_name}. Queue: {self.site_states[site_name]['en_route']}")
+
+    def request_junction(self, node_name, car_id, heading):
+        """
+        Directional junction reservation.
+        If empty, truck claims it and sets the active heading.
+        Subsequent trucks going the SAME direction (<60 deg diff) can enter freely (platooning).
+        Cross-traffic must yield until the junction count hits 0.
+        """
+        import math
+        key = (node_name, car_id)
+        if key in self.junction_holders:
+            return True  # Already inside
+            
+        state = self.junction_states.setdefault(node_name, {'count': 0, 'heading': 0.0})
+        
+        if state['count'] == 0:
+            # Junction is empty, claim it
+            state['heading'] = heading
+            state['count'] = 1
+            self.junction_holders[key] = True
+            return True
+            
+        # Junction is active, check direction compatibility
+        angle_diff = (heading - state['heading'] + math.pi) % (2 * math.pi) - math.pi
+        if abs(angle_diff) < math.radians(60):
+            # Same direction platoon — let them in!
+            state['count'] += 1
+            self.junction_holders[key] = True
+            return True
+            
+        return False  # Cross-traffic — yield!
+
+    def release_junction(self, node_name, car_id):
+        """Release the truck's hold on the junction."""
+        key = (node_name, car_id)
+        if key in self.junction_holders:
+            del self.junction_holders[key]
+            if node_name in self.junction_states:
+                self.junction_states[node_name]['count'] = max(0, self.junction_states[node_name]['count'] - 1)
+
+    def count_yielding_trucks(self, cars):
+        """Returns how many trucks are currently in YIELDING_AT_JUNCTION state."""
+        return sum(1 for c in cars if c.op_state == "YIELDING_AT_JUNCTION")
 
     def consume_coal(self, site_name, amount):
         """

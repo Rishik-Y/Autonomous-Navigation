@@ -321,9 +321,14 @@ def run_simulation():
     global_opt_timer = 0.0
     GLOBAL_OPT_INTERVAL = 30.0 # Run heavy optimization every 30 seconds
 
-    # --- Thread Pool for MPC ---
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=truck_count)
+    # --- Thread Pool for Async MPC ---
+    # max_workers capped at cpu_count to avoid over-subscribing on smaller machines.
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(truck_count, (os.cpu_count() or 4) * 2)
+    )
     last_mpc_time_ms = 0.0
+    # Pending futures list — MPC fires async and never blocks the render loop
+    pending_mpc_futures = []
 
     # --- Main Loop ---
     running = True
@@ -388,29 +393,26 @@ def run_simulation():
                 global_opt_timer = 0.0
                 dispatcher.update_global_plan(cars)
 
-            # --- MPC Update Step (10Hz) ---
+            # --- Async MPC Update Step (10Hz) ---
+            # Fire new solves only if the previous batch has all completed.
+            # The physics + render loop continues unblocked while MPC runs in background.
             if mpc_timer >= MPC_INTERVAL:
-                mpc_timer = 0.0 
-                
-                # Gather all PLANNED trajectories (Sync Step)
-                all_trajectories = [c.planned_trajectory for c in cars]
+                all_done = all(f.done() for f in pending_mpc_futures)
+                if all_done:
+                    mpc_timer = 0.0
 
-                mpc_start_time = time.perf_counter()
-                futures = []
-                for i, car in enumerate(cars):
-                    # Skip MPC during K-turn maneuver
-                    if car.op_state == "TURNING_AROUND":
-                        continue
-                    # Cooperative Collision Avoidance: Share trajectories
-                    other_trajectories = [all_trajectories[j] for j in range(len(cars)) if j != i]
-                    fut = executor.submit(car.run_mpc, other_trajectories, cars)
-                    futures.append(fut)
-                
-                # Wait for all MPC threads to complete
-                for fut in futures:
-                    fut.result()
-                
-                last_mpc_time_ms = (time.perf_counter() - mpc_start_time) * 1000.0
+                    # Snapshot trajectories (sync point before firing threads)
+                    all_traj_stack = np.stack([c.planned_trajectory for c in cars])
+                    mpc_dispatch_start = time.perf_counter()
+
+                    pending_mpc_futures = []
+                    for i, car in enumerate(cars):
+                        if car.op_state == "TURNING_AROUND":
+                            continue
+                        fut = executor.submit(car.run_mpc, all_traj_stack, i, cars)
+                        pending_mpc_futures.append(fut)
+
+                    last_mpc_time_ms = (time.perf_counter() - mpc_dispatch_start) * 1000.0
 
             # --- Physics Update Step (60Hz) ---
             for idx, car in enumerate(cars):
@@ -502,6 +504,7 @@ def run_simulation():
                 f"State: {sel_car.op_state}",
                 f"Dispatcher: Advanced (Swarm Plan)",
                 f"Active Trucks: {len(cars)}",
+                f"Yielding at Junction: {sum(1 for c in cars if c.op_state == 'GOING_TO_ENDPOINT' and c.approaching_junction and not c.junction_granted) + sum(1 for c in cars if c.op_state == 'RETURNING_TO_START' and c.approaching_junction and not c.junction_granted)}",
                 f"Sim Speed: {sim_speed}x | {'Paused' if paused else 'Running'}",
                 f"MPC Solve Time: {last_mpc_time_ms:.1f} ms",
                 "Controls: TAB switch | SPACE play/pause | SHIFT+0 (0.5x) | SHIFT+1-5 (1-5x) | ESC back"

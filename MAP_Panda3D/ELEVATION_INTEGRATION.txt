@@ -1,0 +1,125 @@
+Current state (MAP_Panda3D)
+==========================
+main.py
+- Unified Panda3D launcher with 5 TAB-switchable modes.
+- Shared camera, picker, renderer, HUD and save prompt.
+
+panda_common.py
+- Shared Catmull-Rom helpers, camera controller, picker, and scene rendering.
+- Previously rendered roads/nodes/grid on flat Z.
+
+map_editor.py
+- Core map editing for NODES, EDGES, zone types, chain editing, manual draw, and intersection fixing.
+- Saves map_data.py and regenerates map cache.
+
+coal_mine_editor.py
+- Edits mine capacities and truck count over map nodes.
+- Saves mine_config.json.
+
+waypoint_editor.py
+- Generates/saves/loads spline waypoint maps from VISUAL_ROAD_CHAINS.
+
+map_viewer.py
+- Read-only map visualization with optional node labels.
+
+waypoint_viewer.py
+- Loads map_cache + waypoints, runs A*, visualizes route and spline path.
+
+generate_map_cache.py
+- Builds weighted road graph and zone route cache.
+
+generate_map_data_json.py
+- Converts map_data.py to map_data.json schema used by Simulation.
+
+map_storage.py
+- Writes artifacts to Saved_Map and copies to MAP/Simulation-compatible locations.
+
+map_ui.py / session_tracker.py / unified_map_launcher.py / test_waypoint_viewer.py / map_data.py / mine_config.json
+- UI overlays, save-state tracking, launcher wrapper, test harness, and baseline data/config files.
+
+
+Elevation system components to import from Elevation
+====================================================
+Heightmap
+- Integer cell grid aligned with MAP coordinates: origin(-650,-450), cell_size=10.0, cols=150, rows=140.
+- Cell APIs, vertex interpolation, world/cell conversion, and JSON persistence format.
+
+TerrainMesh
+- Shared-vertex smooth terrain mesh built from Heightmap.
+- GeomVertexData/GeomTriangles rendering with finite-difference normals and grey coloring by height.
+
+CellHighlight (optional editor UX)
+- Terrain cell overlay for terraforming feedback.
+
+Collision-ray picking
+- Camera ray against terrain geometry for accurate (x,y,z) surface picks.
+
+Coordinate alignment
+- Elevation and map coordinates match, so map XY can be rendered directly with terrain-derived Z.
+
+
+Changes required (file-by-file)
+================================
+New: panda_elevation.py
+- Add reusable Heightmap + TerrainMesh with Elevation-compatible JSON save/load.
+- Add world-space interpolated elevation query get_height_at_world(x,y).
+- Point save path to Elevation/Saved_Elevation/elevation_data.json for compatibility.
+
+panda_common.py
+- Replace flat-plane picking with terrain ray picking (pick_surface returns world xyz).
+- Keep a compatibility alias pick_ground -> pick_surface.
+- Add get_elevation_at(x,y) for mode usage.
+- Add draw_terrain() and keep terrain in the scene graph.
+- Make draw_grid, draw_roads, draw_nodes, and point cloud Z elevation-aware.
+- Add terrain lighting (directional + ambient).
+
+main.py
+- Initialize shared Heightmap/TerrainMesh.
+- Load existing elevation JSON at startup.
+- Share same heightmap+terrain renderer/picker across all modes.
+- Camera center initialized above terrain midpoint.
+
+map_editor.py
+- Use terrain-surface picking.
+- Keep logical map data XY-only; use picker/world elevation only for rendering and coordinate feedback.
+
+coal_mine_editor.py
+- Use terrain-surface picking.
+- Keep mine config logic unchanged (XY node identity preserved).
+
+waypoint_editor.py, map_viewer.py, waypoint_viewer.py, test_waypoint_viewer.py
+- Use renderer-driven terrain-aware visuals and terrain picker wiring in standalone app wrappers.
+
+Data/output modules (map_storage.py, generate_map_cache.py, generate_map_data_json.py, map_data.py)
+- Keep schemas and paths unchanged for Simulation compatibility.
+
+
+Rendering pipeline
+==================
+1) Load heightmap grid (or default zeros if no saved elevation file).
+2) Build TerrainMesh shared-vertex geometry from Heightmap vertex interpolation.
+3) Render terrain as base layer with lighting.
+4) For every map visual point (node/spline/route/grid sample):
+   z = heightmap.get_height_at_world(x, y)
+   render_z = z + small_visual_offset
+5) Roads/nodes/waypoints therefore follow terrain profile while map logic remains XY-only.
+6) Node labels anchor above elevation-adjusted positions.
+
+
+Data flow and persistence
+=========================
+Input load order
+- Elevation: Heightmap.load_json() from Elevation/Saved_Elevation/elevation_data.json (if present).
+- Map artifacts: existing resolve_input_path behavior (Saved_Map preferred, then legacy/simulation fallbacks).
+
+Runtime sharing
+- Launcher creates one Heightmap/TerrainMesh/SceneRenderer/Picker used by all 5 modes.
+- Modes continue editing/viewing map structures in XY.
+- Renderer computes Z lazily at draw time from shared Heightmap.
+
+Output compatibility
+- map_data.py/json, map_cache.pkl, waypoints.pkl, mine_config.json unchanged in schema/path behavior.
+- Simulation consumers keep reading the same structures; elevation affects visualization only.
+
+Fallback behavior
+- Missing elevation JSON => default zero grid, yielding flat terrain but same pipeline.

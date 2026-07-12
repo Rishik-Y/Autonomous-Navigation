@@ -1,0 +1,37 @@
+model:
+  vehicle:
+    # Kinematic Dimensions
+    wheelbase: 0.2965  # Distance between front and rear axles (m).
+    width: 0.16        # Width of the vehicle (m).
+
+    # Actuator & Dynamic Limits
+    max_speed: 1.5     # Maximum forward velocity (m/s).
+    max_acc: 1.0       # Maximum acceleration limit (m/s**2).
+    max_d_acc: 1.0     # Maximum Jerk (m/s**3). Acceleration rate of chage.
+    max_steer: 0.38    # Max steering angle in radians.
+    max_d_steer: 0.52  # Max steering speed/rate (rad/s).
+
+controller:
+  prediction:
+    horizon_time: 5.0  # Control Horizon: How far into the future the MPC optimizes (seconds).
+    timestep: 0.2      # Discretization interval (seconds).
+
+  # State Vectors mapping:   [Along-track error, Cross-track error, Velocity error, Heading error]
+  # Control Vectors mapping: [Acceleration, Steering Angle]
+  weights:
+    state_cost: [10, 50, 30, 30]
+    # Terminal State Cost: Penalizes errors at the final step (N) of the prediction horizon.
+    final_state_cost: [10, 50, 30, 30]
+
+    # Control Effort Cost: Penalizes large control inputs to save energy and prevent aggressive over-actuation.
+    input_cost: [10, 10]
+
+    # Control Rate Cost: Penalizes rapid changes between consecutive control commands.
+    input_rate_cost: [10, 10]
+
+  obstacle:
+    safety_margin: 0.15 # Inflation buffer (m) added around the vehicle for obstacle avoidance.
+    # Soft Constraint Slack Penalty: A massive weight penalizing safety margin violations.
+    # Using a high "slack" value prevents the MPC solver from crashing (infeasible solution) 
+    # if an obstacle cannot be avoided perfectly, while heavily forcing the optimizer to choose safety first.
+    slack_penalty: 100000

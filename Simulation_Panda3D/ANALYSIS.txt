@@ -1,0 +1,234 @@
+Simulation_Panda3D Port Analysis
+================================
+
+Scope
+-----
+This document inventories the original Simulation code and maps the 2D Pygame system to the new Panda3D rendering/runtime architecture while preserving algorithmic behavior.
+
+1) Complete Inventory (Original Simulation)
+-------------------------------------------
+
+Simulation/main.py
+- Functions:
+  - _load_json_file(config_file, label)
+  - load_mine_config()
+  - load_algorithm_config()
+  - get_path_from_nodes(route_node_names, waypoints_map)
+  - run_simulation()
+- In-loop responsibilities:
+  - Mine/config loading
+  - waypoint/cache loading
+  - road_graph spur patching
+  - Dispatcher init and task assignment
+  - truck spawn and Kalman setup
+  - timers: MPC (10Hz), traffic (1Hz), global opt (30s)
+  - physics tick, K-turn state transitions, HUD, tooltip, rendering
+
+Simulation/graphics.py
+- Functions:
+  - grid_to_screen(pos_m, scale, pan)
+  - screen_to_grid(pos_px, scale, pan)
+  - draw_road_network(screen, g_to_s, scale, waypoints_map)
+  - draw_active_path(screen, path, g_to_s, scale)
+
+Simulation/car.py
+- Class Car
+  - __init__
+  - get_reference_trajectory
+  - run_mpc
+  - move
+  - update_op_state
+  - execute_turn_step
+  - get_noisy_measurement
+  - draw
+- Data model: x_m, y_m, angle, speed/accel/steer, path state s_path_m, operation states, payload mass, MPC buffers, K-turn controls.
+
+Simulation/config.py
+- Constants only:
+  - Display/scale constants, road width/lane offset, vehicle dimensions
+  - Full vehicle dynamics constants, limits, controller/KF constants
+
+Simulation/dispatcher.py
+- Class Dispatcher
+  - __init__
+  - update_global_plan
+  - assign_task
+  - release_reservation
+  - consume_coal
+  - get_coal_remaining
+  - record_coal_dumped
+  - update_traffic_weights
+  - get_graph
+
+Simulation/mpc_controller.py
+- Class MPCController
+  - __init__
+  - normalize_angle (staticmethod)
+  - step_dynamics
+  - get_dynamics_jacobians
+  - _collision_cost_and_grad
+  - solve
+  - _total_cost
+
+Simulation/cyberpunk_driver.py
+- Class CyberpunkDriver
+  - __init__
+  - calculate_target_speed
+  - get_vehicles_in_range
+  - check_collision_trajectory
+  - get_oriented_box
+  - sat_collision
+  - project_polygon
+
+Simulation/tooltip_overlay.py
+- Functions:
+  - screen_to_grid
+  - get_hovered_entity
+  - draw_tooltip
+
+Simulation/utils.py
+- Functions:
+  - resist_forces
+  - traction_force_from_power
+  - brake_force_from_command
+  - a_star_pathfinding
+- Class Path
+  - __init__
+  - get_segment_index
+  - point_at
+  - project
+  - get_curvature_at
+  - get_normal_at
+- Class KalmanFilter
+  - __init__
+  - predict
+  - update
+
+Simulation/graph_adapter.py
+- Class GraphAdapter
+  - __init__
+  - _get_path_length
+  - _reconstruct_path_waypoints
+  - get_distance_matrix
+
+Simulation/Map/map_loader.py
+- Globals: NODES, EDGES, LOAD_ZONES, DUMP_ZONES, FUEL_ZONES, VISUAL_ROAD_CHAINS
+- Function:
+  - load_map_data(json_file=None)
+
+Simulation/Algorithm/planner_registry.py
+- Constants: DEFAULT_GLOBAL_PLANNER, DEFAULT_LOCAL_PLANNER
+- Functions:
+  - _normalize_module_name
+  - _load_planner_class
+  - load_global_planner
+  - load_local_planner
+
+Simulation/Algorithm/planner_interface.py
+- Class GlobalPlannerInterface:
+  - optimize_assignments (abstract)
+  - get_travel_time (abstract)
+- Class LocalPlannerInterface:
+  - compute_route (abstract)
+
+Simulation/Algorithm/global/GlobalOptimizer.py
+- Class GlobalOptimizer
+  - __init__
+  - get_travel_time
+  - optimize_assignments
+  - solve_dp_greedy_lookahead
+- Alias: Planner = GlobalOptimizer
+
+Simulation/Algorithm/global/global_planner_greedy.py
+- Class Planner(GlobalPlannerInterface)
+  - __init__
+  - get_travel_time
+  - optimize_assignments
+
+Simulation/Algorithm/local/local_planner_astar.py
+- Class Planner(LocalPlannerInterface)
+  - compute_route
+
+Simulation/Algorithm/local/local_planner_bfs.py
+- Class Planner(LocalPlannerInterface)
+  - compute_route
+
+2) Graphics Strategy (Pygame -> Panda3D)
+----------------------------------------
+
+Old graphics model
+- Immediate-mode 2D drawing per frame via pygame.draw and blits.
+- Screen transforms handled by scale/pan conversion helpers.
+- Roads/nodes/paths rendered in flat 2D.
+
+New graphics model
+- Use MAP_Panda3D primitives directly:
+  - SceneRenderer for terrain/grid/road/node draw calls.
+  - CameraController for live navigation.
+  - Heightmap for elevation queries.
+- graphics.py rewritten as SimulationGraphics:
+  - Build spline list from map_data.VISUAL_ROAD_CHAINS + generate_curvy_path_from_nodes.
+  - draw_static_scene(): renderer.draw_grid + draw_roads + draw_nodes.
+  - draw_active_paths(): draw selected vehicle path as elevated 3D line via renderer.draw_path_lines.
+- Result: all former line/circle/rect calls are replaced with SceneRenderer mesh/line/node drawing.
+
+3) 3D Translation Plan (Truck Pose Mapping)
+-------------------------------------------
+
+2D control state retained
+- MPC and planners remain in XY plane exactly as before.
+- Car physics state remains x_m, y_m, angle (radians yaw in planar frame).
+
+3D projection
+- Each truck owns a Panda3D NodePath root + rgbCube visual child + CollisionBox child.
+- Visual cuboid dimensions use config constants:
+  - length = CAR_LENGTH_M, width = CAR_WIDTH_M, height = CAR_HEIGHT_M.
+- Bottom-center pivot rule:
+  - model origin kept at cuboid center, visual shifted +CAR_HEIGHT_M/2 in local Z.
+  - truck node placed at ground-contact point Z.
+- Per-tick projection sequence:
+  1) MPC/physics updates x_m/y_m/angle.
+  2) z_ground = Heightmap.get_height_at_world(x_m, y_m).
+  3) node.setPos(x_m, y_m, z_ground).
+  4) node.setH(degrees(angle)); P=0, R=0.
+- This keeps algorithm math 2D while trucks visibly climb/descend terrain.
+
+4) UI Plan (Tooltip Overlay in Panda3D)
+---------------------------------------
+
+Old UI
+- Pygame tooltip near mouse cursor using translucent rect + rendered text.
+
+New UI
+- tooltip_overlay.py provides TooltipOverlay with OnscreenText on aspect2d.
+- Interaction flow:
+  - Primary: collision ray intersects truck CollisionBox (truck_id tag).
+  - Secondary: ground pick + nearest zone lookup for load/dump nodes.
+- Placement strategy:
+  - Convert world XYZ (truck top or zone marker) to screen/aspect coordinates using camLens.project.
+  - Place text above projected position.
+- Content parity maintained:
+  - Truck: id, state, target, cargo mass.
+  - Mine: coal remaining, en_route.
+  - Dump: total dumped, en_route.
+
+5) Porting Decisions Applied
+----------------------------
+- Algorithm, MPC, dispatcher, utility logic copied and preserved.
+- Pygame-dependent files fully rewritten for Panda3D runtime:
+  - main.py
+  - graphics.py
+  - car.py
+  - tooltip_overlay.py
+- map_loader updated to resolve artifacts from MAP_Panda3D/Saved_Map first, with compatibility fallbacks.
+- GraphAdapter defaults updated to read map_cache.pkl and waypoints.pkl via the same Saved_Map resolver.
+
+6) Integration Contract with MAP_Panda3D
+----------------------------------------
+- Directly reuses:
+  - panda_common.SceneRenderer
+  - panda_common.CameraController
+  - panda_common.Picker
+  - panda_elevation.Heightmap
+- Runtime expects map_data.json, mine_config.json, map_cache.pkl, waypoints.pkl from MAP_Panda3D/Saved_Map.
+- Fallbacks retained for backward compatibility with existing Simulation/Map and MAP/Saved_Map artifacts.

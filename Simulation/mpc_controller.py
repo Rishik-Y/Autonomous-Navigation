@@ -91,9 +91,10 @@ class MPCController:
         L = self.L
 
         A = np.eye(4)
-        A[0, 2] = -v * np.sin(theta) * dt
+        v_eff = max(v, 0.5)  # Trick to prevent vanishing gradients at rest
+        A[0, 2] = -v_eff * np.sin(theta) * dt
         A[0, 3] = np.cos(theta) * dt
-        A[1, 2] = v * np.cos(theta) * dt
+        A[1, 2] = v_eff * np.cos(theta) * dt
         A[1, 3] = np.sin(theta) * dt
         tan_d = np.tan(delta)
         A[2, 3] = tan_d / L * dt
@@ -101,7 +102,7 @@ class MPCController:
         B = np.zeros((4, 2))
         B[3, 0] = dt
         sec2 = 1.0 / (np.cos(delta) ** 2)
-        B[2, 1] = (v / L) * sec2 * dt
+        B[2, 1] = (v_eff / L) * sec2 * dt
 
         return A, B
 

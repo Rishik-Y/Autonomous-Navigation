@@ -328,7 +328,8 @@ class Car:
 
         # Calculate resistive forces FIRST
         gravity_force = gravity_force_along_slope(self.current_mass_kg, self.pitch_rad)
-        rolling_force = rolling_resistance_force(self.current_mass_kg, self.pitch_rad)
+        # Only apply tire friction if moving, otherwise it acts as a phantom pulling force
+        rolling_force = rolling_resistance_force(self.current_mass_kg, self.pitch_rad) if self.speed_ms > 0.05 else 0.0
         drag_force = aerodynamic_drag_force(self.speed_ms)
 
         # What net force is the MPC actually asking for?

@@ -152,6 +152,10 @@ class PandaSimulationApp(ShowBase):
         self.sim_speed = 1.0
         self.selected_car_idx = 0
 
+        # --- Fixed Timestep Physics ---
+        self.FIXED_DT = 1.0 / 60.0
+        self.sim_accumulator = 0.0
+
         self._load_sim_data()
         self._spawn_cars()
 
@@ -266,7 +270,7 @@ class PandaSimulationApp(ShowBase):
             car.attach_visual(self.renderer.root)
             car.update_visual(self.heightmap)
             self.cars.append(car)
-            self.kfs.append(KalmanFilter(dt=1.0 / 60.0, start_x=car.x_m, start_y=car.y_m))
+            self.kfs.append(KalmanFilter(dt=self.FIXED_DT, start_x=car.x_m, start_y=car.y_m))
 
         self.dispatcher.update_global_plan(self.cars)
         for idx, car in enumerate(self.cars):
@@ -292,7 +296,7 @@ class PandaSimulationApp(ShowBase):
             car.path = Path(wp)
             car.op_state = "GOING_TO_ENDPOINT"
             car.desired_speed_ms = SPEED_MS_EMPTY
-            self.kfs[idx] = KalmanFilter(dt=1.0 / 60.0, start_x=pos[0], start_y=pos[1])
+            self.kfs[idx] = KalmanFilter(dt=self.FIXED_DT, start_x=pos[0], start_y=pos[1])
             car.run_mpc([])
             car.update_visual(self.heightmap, is_selected=(idx == self.selected_car_idx))
 
@@ -355,82 +359,96 @@ class PandaSimulationApp(ShowBase):
         if frame_dt <= 0.0:
             return Task.cont
 
-        sim_dt = 0.0 if self.paused else frame_dt * self.sim_speed
-        if sim_dt > 0:
-            self.mpc_timer += sim_dt
-            self.traffic_update_timer += sim_dt
-            self.global_opt_timer += sim_dt
+        if not self.paused:
+            self.sim_accumulator += frame_dt * self.sim_speed
+            # Prevent spiral of death if frame rate drops massively
+            if self.sim_accumulator > 0.5:
+                self.sim_accumulator = 0.5
 
-            if self.traffic_update_timer >= self.TRAFFIC_UPDATE_INTERVAL:
-                self.traffic_update_timer = 0.0
-                self.dispatcher.update_traffic_weights(self.cars)
+            # Run physics in mathematically perfectly sized steps
+            while self.sim_accumulator >= self.FIXED_DT:
+                physics_dt = self.FIXED_DT
+                
+                self.mpc_timer += physics_dt
+                self.traffic_update_timer += physics_dt
+                self.global_opt_timer += physics_dt
 
-            if self.global_opt_timer >= self.GLOBAL_OPT_INTERVAL:
-                self.global_opt_timer = 0.0
-                self.dispatcher.update_global_plan(self.cars)
+                if self.traffic_update_timer >= self.TRAFFIC_UPDATE_INTERVAL:
+                    self.traffic_update_timer = 0.0
+                    self.dispatcher.update_traffic_weights(self.cars)
 
-            if self.mpc_timer >= self.MPC_INTERVAL:
-                self.mpc_timer = 0.0
-                all_trajectories = [c.planned_trajectory for c in self.cars]
-                for i, car in enumerate(self.cars):
+                if self.global_opt_timer >= self.GLOBAL_OPT_INTERVAL:
+                    self.global_opt_timer = 0.0
+                    self.dispatcher.update_global_plan(self.cars)
+
+                if self.mpc_timer >= self.MPC_INTERVAL:
+                    self.mpc_timer = 0.0
+                    all_trajectories = [c.planned_trajectory for c in self.cars]
+                    for i, car in enumerate(self.cars):
+                        if car.op_state == "TURNING_AROUND":
+                            continue
+                        other = [all_trajectories[j] for j in range(len(self.cars)) if j != i]
+                        car.run_mpc(other, other_cars=self.cars)
+
+                for idx, car in enumerate(self.cars):
+                    kf = self.kfs[idx]
+                    est_pos_m = np.array([kf.x[0], kf.x[2]])
+
+                    if car.path and car.op_state != "TURNING_AROUND":
+                        car.s_path_m = car.path.project(est_pos_m, car.s_path_m)
+
+                    _, base_speed_ms = car.update_op_state(physics_dt, self.dispatcher)
+                    car.desired_speed_ms = base_speed_ms
+
+                    if car.needs_new_path:
+                        car.needs_new_path = False
+                        car.current_node_name = car.target_node_name
+                        new_target = self.dispatcher.assign_task(car)
+                        car.target_node_name = new_target
+                        route_node_names = self.local_planner.compute_route(
+                            self.dispatcher.get_graph(),
+                            car.current_node_name,
+                            new_target,
+                            cache=self.route_cache,
+                        )
+                        if route_node_names:
+                            waypoints_m = get_path_from_nodes(route_node_names, self.waypoints_map)
+                            if waypoints_m and len(waypoints_m) >= 2:
+                                car.path = Path(waypoints_m)
+                                car.s_path_m = 0.0
+                                car.turn_target_angle = math.atan2(
+                                    waypoints_m[1][1] - waypoints_m[0][1],
+                                    waypoints_m[1][0] - waypoints_m[0][0],
+                                )
+                                car.current_mpc_control = np.zeros(2)
+                                car.mpc.prev_u = np.zeros_like(car.mpc.prev_u)
+                                # Reset KF for new path tracking
+                                self.kfs[idx] = KalmanFilter(dt=self.FIXED_DT, start_x=car.x_m, start_y=car.y_m)
+
                     if car.op_state == "TURNING_AROUND":
-                        continue
-                    other = [all_trajectories[j] for j in range(len(self.cars)) if j != i]
-                    car.run_mpc(other, other_cars=self.cars)
+                        turn_done = car.execute_turn_step(physics_dt)
+                        if turn_done:
+                            if car.path:
+                                car.s_path_m = car.path.project(np.array([car.x_m, car.y_m]), 0.0)
+                            kf.x[0] = car.x_m
+                            kf.x[1] = 0.0
+                            kf.x[2] = car.y_m
+                            kf.x[3] = 0.0
+                            car.run_mpc([], other_cars=self.cars)
+                    else:
+                        car.move(physics_dt, self.heightmap)
 
-            for idx, car in enumerate(self.cars):
-                kf = self.kfs[idx]
-                est_pos_m = np.array([kf.x[0], kf.x[2]])
+                    accel_vec_m = np.array([
+                        car.accel_ms2 * math.cos(car.angle),
+                        car.accel_ms2 * math.sin(car.angle),
+                    ])
+                    kf.predict(u=accel_vec_m)
+                    kf.update(z=car.get_noisy_measurement())
+                
+                # Consume accumulator time
+                self.sim_accumulator -= self.FIXED_DT
 
-                if car.path and car.op_state != "TURNING_AROUND":
-                    car.s_path_m = car.path.project(est_pos_m, car.s_path_m)
-
-                _, base_speed_ms = car.update_op_state(sim_dt, self.dispatcher)
-                car.desired_speed_ms = base_speed_ms
-
-                if car.needs_new_path:
-                    car.needs_new_path = False
-                    car.current_node_name = car.target_node_name
-                    new_target = self.dispatcher.assign_task(car)
-                    car.target_node_name = new_target
-                    route_node_names = self.local_planner.compute_route(
-                        self.dispatcher.get_graph(),
-                        car.current_node_name,
-                        new_target,
-                        cache=self.route_cache,
-                    )
-                    if route_node_names:
-                        waypoints_m = get_path_from_nodes(route_node_names, self.waypoints_map)
-                        if waypoints_m and len(waypoints_m) >= 2:
-                            car.path = Path(waypoints_m)
-                            car.s_path_m = 0.0
-                            car.turn_target_angle = math.atan2(
-                                waypoints_m[1][1] - waypoints_m[0][1],
-                                waypoints_m[1][0] - waypoints_m[0][0],
-                            )
-                            car.current_mpc_control = np.zeros(2)
-                            car.mpc.prev_u = np.zeros_like(car.mpc.prev_u)
-
-                if car.op_state == "TURNING_AROUND":
-                    turn_done = car.execute_turn_step(sim_dt)
-                    if turn_done:
-                        if car.path:
-                            car.s_path_m = car.path.project(np.array([car.x_m, car.y_m]), 0.0)
-                        kf.x[0] = car.x_m
-                        kf.x[1] = 0.0
-                        kf.x[2] = car.y_m
-                        kf.x[3] = 0.0
-                        car.run_mpc([], other_cars=self.cars)
-                else:
-                    car.move(sim_dt, self.heightmap)
-
-                accel_vec_m = np.array([
-                    car.accel_ms2 * math.cos(car.angle),
-                    car.accel_ms2 * math.sin(car.angle),
-                ])
-                kf.predict(u=accel_vec_m)
-                kf.update(z=car.get_noisy_measurement())
-
+        # --- OUTSIDE THE LOOP: VISUAL UPDATES ONLY ONCE PER FRAME ---
         selected = self.cars[self.selected_car_idx] if self.cars else None
         self.graphics.draw_active_paths(selected)
 

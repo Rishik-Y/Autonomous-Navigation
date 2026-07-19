@@ -35,9 +35,9 @@ class MPCController:
         self.R_rate = np.diag([3.0, 50.0])
 
         # Road boundary barrier
-        self.LANE_MARGIN = 2.0  # one-sided max lateral deviation from centerline
-        self.BARRIER_WEIGHT = 1000.0
-        self.BARRIER_ACTIVATION_RATIO = 0.5
+        self.LANE_MARGIN = 2.5
+        self.BARRIER_ACTIVATION_RATIO = 0.6  # Safe zone is now 1.5m
+        self.BARRIER_WEIGHT = 50.0  # Reduced from 1000.0 to prevent braking deadlocks
         self.BARRIER_STEEPNESS = 2.0
         self.BARRIER_STEEPNESS_SQ = self.BARRIER_STEEPNESS ** 2
 
@@ -226,7 +226,9 @@ class MPCController:
 
         safe_threshold = self.LANE_MARGIN * self.BARRIER_ACTIVATION_RATIO
         if abs(e_lat) > safe_threshold:
-            overshoot = abs(e_lat) - safe_threshold
+            raw_overshoot = abs(e_lat) - safe_threshold
+            # Cap overshoot to 1.5 meters to prevent np.exp() numerical explosion
+            overshoot = min(raw_overshoot, 1.5) 
             exp_term = np.exp(overshoot * self.BARRIER_STEEPNESS)
             barrier_val = exp_term - 1.0
             cost += self.BARRIER_WEIGHT * barrier_val
